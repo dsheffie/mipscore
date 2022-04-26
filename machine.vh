@@ -11,7 +11,7 @@
 
 `define LG_M_WIDTH 6
 
-`define BIG_ENDIAN 1
+//`define BIG_ENDIAN 1
 
 //gshare branch predictor
 `define LG_PHT_SZ 16

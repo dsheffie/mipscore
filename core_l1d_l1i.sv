@@ -7,6 +7,7 @@
 module core_l1d_l1i(clk, 
 		    reset,
 		    extern_irq,
+		    extern_irq_ack,
 		    in_flush_mode,
 		    resume,
 		    resume_pc,
@@ -64,6 +65,7 @@ module core_l1d_l1i(clk,
    input logic clk;
    input logic reset;
    input logic extern_irq;
+   output logic extern_irq_ack;
    input logic resume;
    input logic [(`M_WIDTH-1):0] resume_pc;
    output logic 		in_flush_mode;
@@ -512,6 +514,7 @@ module core_l1d_l1i(clk,
 	     .clk(clk),
 	     .reset(reset),
 	     .extern_irq(extern_irq),
+	     .extern_irq_ack(extern_irq_ack),
 	     .resume(resume),
 	     .memq_empty(memq_empty),
 	     .drain_ds_complete(drain_ds_complete),

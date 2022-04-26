@@ -1788,7 +1788,7 @@ void execMips(state_t *s) {
 	case 24: //ERETU
 	  exit(-1);
 	case 32: //WAIT
-	  if((s->cpr0[CPR0_SR] & 1) == 0) {
+	  if((s->cpr0[CPR0_SR*state_t::SUB_CPR0] & 1) == 0) {
 	    printf("attempting to wait with interrupts disabled @ VA %x, PA %x\n",
 		   s->pc, VA2PA(s->pc));
 	    exit(-1);
@@ -1803,31 +1803,42 @@ void execMips(state_t *s) {
 	     ((inst & 65535) == 0x6000) ) {
       //DI
       if(rt != 0) {
-	s->gpr[rt] = s->cpr0[CPR0_SR];
+	s->gpr[rt] = s->cpr0[CPR0_SR*state_t::SUB_CPR0];
       }
-      s->cpr0[CPR0_SR] &= (~1U);
+      s->cpr0[CPR0_SR*state_t::SUB_CPR0] &= (~1U);
       s->insn_histo[mipsInsn::DI]++;
     }
     else if( (((inst >> 21) & 31) == 11 ) &&
 	     ((inst & 65535) == 0x6020) ) {
       //EI
       if(rt != 0) {
-	s->gpr[rt] = s->cpr0[CPR0_SR];
+	s->gpr[rt] = s->cpr0[CPR0_SR*state_t::SUB_CPR0];
       }
-      s->cpr0[CPR0_SR] |= 1U;
+      s->cpr0[CPR0_SR*state_t::SUB_CPR0] |= 1U;
       s->insn_histo[mipsInsn::EI]++;
     }
 
     else {
+      uint32_t sel = inst&3;
+      assert(sel < 4);
+      //assert(sel == 0);
+
       switch(rs) 
 	{
 	case 0x0: /*mfc0*/
-	  s->gpr[rt] = s->cpr0[rd];
+	  s->gpr[rt] = s->cpr0[rd*state_t::SUB_CPR0 + sel];
 	  s->insn_histo[mipsInsn::MFC0]++;
+	  if(sel != 0) {
+	    std::cout << "attempt to mfc0 to cpr0 register " << rd << "." << sel << "\n";
+	  }	  
 	  break;
 	case 0x4: /*mtc0*/
-	  s->cpr0[rd] = s->gpr[rt];
+	  s->cpr0[rd*state_t::SUB_CPR0 + sel] = s->gpr[rt];
 	  //std::cout << "writing cpr0[" << rd << "] = " << std::hex << s->gpr[rt] << std::dec << "\n";
+	  if(sel != 0) {
+	    std::cout << "attempt to mtc0 to cpr0 register " << rd << "." << sel << "\n";
+	  }
+	  
 	  s->insn_histo[mipsInsn::MTC0]++;
 	  break;
 	default:

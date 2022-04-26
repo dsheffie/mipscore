@@ -14,7 +14,6 @@ typedef struct packed {
    logic       is_store;
    logic       is_ret;
    logic       is_call;
-   logic       is_eret;
    logic       is_wait;
    logic       valid_dst;
    logic       valid_hilo_dst;

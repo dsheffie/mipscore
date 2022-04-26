@@ -11,7 +11,7 @@
 #include "sparse_mem.hh"
 #include "mips_insns.hh"
 
-#define IS_LITTLE_ENDIAN false
+#define IS_LITTLE_ENDIAN true
 
 /* from gdb simulator */
 #define RSVD_INSTRUCTION           (0x00000005)
@@ -236,11 +236,12 @@ enum class fp_reg_state { unknown, sp, dp };
 
 class state_t{
 public:
+  static const int SUB_CPR0 = 4;
   uint32_t pc = 0;
   int32_t gpr[32] = {0};
   int32_t lo = 0;
   int32_t hi = 0;
-  uint32_t cpr0[32] = {0};
+  uint32_t cpr0[32*SUB_CPR0] = {0};
   uint32_t cpr1[32] = {0};
   uint32_t fcr1[5] = {0};
   uint64_t icnt = 0;

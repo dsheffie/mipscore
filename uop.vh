@@ -165,6 +165,7 @@ typedef enum logic [7:0]
    DI,
    EI,
    WAIT,
+   PRINTCHAR,
    II //illegal instruction
    } opcode_t;
 

@@ -1206,9 +1206,13 @@ endfunction
 	  end
      end // always_ff@
 
+
 `ifdef VERILATOR
    always_ff@(negedge clk)
      begin
+	//if(r_pht_update) $display("update branch table for pht %d, take %b",
+	//r_pht_update_idx, r_take_br);
+	
 	//$display("%b %b %b %b", t_push_insn, t_push_insn2, t_push_insn3, t_push_insn4);
 	record_fetch(t_push_insn ? 32'd1 : 32'd0,
 		     t_push_insn2 ? 32'd1 : 32'd0,

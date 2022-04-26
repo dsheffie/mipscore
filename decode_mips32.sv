@@ -365,7 +365,18 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		      uop.hilo_dst_valid = 1'b1;
 		      uop.op = DIVU;
 		      uop.is_int = 1'b1;
-		   end		 
+		   end	
+		 6'd32: /* HACK */
+		   begin
+		      uop.srcA = rt;
+		      uop.srcA_valid = 1'b1;
+		      uop.srcB = rs;
+		      uop.srcB_valid = 1'b1;
+		      uop.op = PRINTCHAR;
+		      uop.is_int = 1'b1;
+		      uop.serializing_op = 1'b1;
+		      uop.must_restart = 1'b1;
+		   end
 		 6'd33: /* addu */
 		   begin
 		      uop.srcA = rt;
@@ -770,6 +781,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		    uop.op = ERET;
 		    uop.is_int = 1'b1;
 		    uop.serializing_op = 1'b1;
+		    uop.srcA = 'd14; //EPC
 		    uop.must_restart = 1'b1;		    
 		 end
 	       else if(insn[25] && (insn[5:0] == 6'd32))
@@ -806,8 +818,9 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 			begin
 			   uop.op = MFC0;
 			   uop.dst = rt;
-			   uop.dst_valid = 1'b1;
+			   uop.dst_valid = (rt != 'd0);
 			   uop.srcA = rd;
+			   uop.srcB = {{ZP{1'b0}}, 2'd0, insn[2:0]};
 			   uop.is_int = 1'b1;
 			   uop.serializing_op = 1'b1;
 			   uop.must_restart = 1'b1;
@@ -818,6 +831,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 			   uop.dst = rd;
 			   uop.srcA = rt;
 			   uop.srcA_valid = 1'b1;
+			   uop.srcB = {{ZP{1'b0}}, 2'd0, insn[2:0]};
 			   uop.serializing_op = 1'b1;
 			   uop.has_delay_slot = 1'b0;
 			   uop.is_int = 1'b1;

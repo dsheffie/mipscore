@@ -6,6 +6,8 @@ import "DPI-C" function longint fp32_to_fp64(input int a);
 `endif
 
 `ifdef VERILATOR
+import "DPI-C" function void put_char(input byte c);
+
 import "DPI-C" function void report_exec(input int int_valid, 
 					 input int int_blocked,
 					 input int mem_valid, 
@@ -32,6 +34,7 @@ module exec(clk,
 	    delayslot_rob_ptr,
 	    in_32fp_reg_mode,
 	    cpr0_status_reg,
+	    cpr0_timer_irq,
 	    uq_wait,
 	    mq_wait,
 	    fq_wait,
@@ -71,6 +74,8 @@ module exec(clk,
    input logic [`LG_ROB_ENTRIES-1:0] delayslot_rob_ptr;
    output logic 		     in_32fp_reg_mode;
    output logic [(`M_WIDTH-1):0]     cpr0_status_reg;
+   output logic 		     cpr0_timer_irq;
+
    
    localparam N_ROB_ENTRIES = (1<<`LG_ROB_ENTRIES);   
    output logic [N_ROB_ENTRIES-1:0]  uq_wait;   
@@ -1230,15 +1235,24 @@ module exec(clk,
 		    {28'd0, t_alu_entry_rdy}
 		    );
      end
-`endif //  `ifdef VERILATOR
 
-   //always_ff@(negedge clk)
-   //begin
-   //if(int_uop.op == WAIT && r_start_int)
-   //begin
-   //$display("got wait for pc %x", int_uop.pc);
-   //end
-   //end
+    always_ff@(negedge clk)
+      begin
+	 if(int_uop.op == MTC0 && r_start_int)
+	   begin
+	      if(int_uop.srcB != 'd0)
+		begin
+		   $display("MTC0 : reg %d : srcB = %d, value %x", 
+			    int_uop.dst, int_uop.srcB, t_srcA);
+		   //$stop();
+		end
+	   end
+	 if(int_uop.op == PRINTCHAR && r_start_int)
+	   begin
+	      put_char(t_srcB[7:0]);
+	   end
+      end
+`endif //  `ifdef VERILATOR
       
    always_comb
      begin
@@ -1282,6 +1296,7 @@ module exec(clk,
 	       t_alu_valid = 1'b1;
 	       t_got_break = 1'b1;
 	       t_fault = 1'b1;
+	       t_pc = t_pc4;
 	       //t_unimp_op = 1'b1;
 	    end
 	  SYSCALL:
@@ -1774,13 +1789,10 @@ module exec(clk,
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
-	  MFC0:
-	    begin	       
-	       //t_unimp_op = 1'b1;
-	       t_result = t_cpr0_srcA;
-	       t_alu_valid = 1'b1;
-	       t_wr_int_prf = 1'b1;
-	       t_pc = t_pc4;	       
+	  PRINTCHAR:
+	    begin
+	       t_alu_valid = 1'b1;	       
+	       t_pc = t_pc4;
 	    end
 	  DI:
 	    begin
@@ -1802,6 +1814,11 @@ module exec(clk,
 	       t_dst_cpr0 = 'd12;
 	       t_cpr0_result = {t_cpr0_srcA[(`M_WIDTH-1):1], 1'b1};
 	    end
+	  ERET:
+	    begin
+	       t_pc = t_cpr0_srcA;
+	       t_alu_valid = 1'b1;
+	    end
 	  WAIT:
 	    begin
 	       t_unimp_op = 1'b1;
@@ -1809,24 +1826,40 @@ module exec(clk,
 	       t_fault = 1'b1;
 	       t_pc = t_pc4;
 	    end
+	  MTC0:
+	    begin
+	       t_wr_cpr0 = 1'b1;
+	       case(int_uop.dst[4:0])
+		 5'd15: /* prid */
+		   begin
+		      t_cpr0_result = {33'd1, 1'b0, t_srcA[29:12], 12'd0};
+		   end
+		 default:
+		   begin
+		      t_cpr0_result = t_srcA;	      
+		   end
+	       endcase
+	       if(int_uop.dst[4:0] == 5'd12)
+		 begin
+		    n_in_32b_mode = (t_srcA[5] == 1'b0);
+		    n_in_32fp_reg_mode = (t_srcA[26] == 1'b1);
+		 end
+	       t_alu_valid = 1'b1;
+	       t_pc = t_pc4;
+	    end // case: MTC0
+	  MFC0:
+	    begin	       
+	       t_result = t_cpr0_srcA;
+	       t_alu_valid = 1'b1;
+	       t_wr_int_prf = 1'b1;
+	       t_pc = t_pc4;	       
+	    end
 	  RDHWR:
 	    begin
 	       t_result = t_cpr0_srcA;
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
-	  MTC0:
-	    begin
-	       t_wr_cpr0 = 1'b1;	       
-	       if(int_uop.dst[4:0] == 5'd12)
-		 begin
-		    n_in_32b_mode = (t_srcA[5] == 1'b0);
-		    n_in_32fp_reg_mode = (t_srcA[26] == 1'b1);
-		 end
-	       t_cpr0_result = t_srcA;
-	       t_alu_valid = 1'b1;
-	       t_pc = t_pc4;
-	    end // case: MTC0
 	  II:
 	    begin
 	       t_unimp_op = 1'b1;
@@ -2675,7 +2708,7 @@ module exec(clk,
      begin
 	if(reset)
 	  begin
-	     cpr0_status_reg <= 'd4194308; 
+	     cpr0_status_reg <= 'd0;
 	  end
 	else
 	  begin
@@ -2685,35 +2718,64 @@ module exec(clk,
 	       end
 	  end
      end
+
+   logic [31:0] r_cpr0_count_reg, r_cpr0_compare_reg;
+   always_comb
+     begin
+	cpr0_timer_irq = (r_cpr0_count_reg == r_cpr0_compare_reg);
+     end
    
    always_ff@(posedge clk)
      begin
 	if(reset)
 	  begin
-	     r_cpr0['d12] <= 'd4194308;
+	     r_cpr0_count_reg <= 'd0;
 	  end
 	else
 	  begin
-	     if(r_start_int && t_wr_cpr0)
+	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0=='d9))
 	       begin
-		  //$display("writing %x to cpr0 %d, pc %x, dst %d, dst valid %b", 
-		  //t_cpr0_result,
-		  //t_dst_cpr0, 
-		  //int_uop.pc,
-		  //int_uop.dst,
-		  //int_uop.dst_valid);
-		  r_cpr0[t_dst_cpr0] <= t_cpr0_result;
+		  r_cpr0_count_reg <= t_cpr0_result[31:0];
 	       end
-	     /* this is a terrible hack for linux o32 syscall emulation */
-	     else if(r_start_int && t_set_thread_area)
+	     else
 	       begin
-		  r_cpr0['d29] <= t_cpr0_result;
+		  r_cpr0_count_reg <= (r_cpr0_count_reg == r_cpr0_compare_reg) ? 'd0 :
+				      r_cpr0_count_reg + 'd1;
 	       end
-	     else if(exception_wr_cpr0_val)
+	  end
+     end
+
+   always_ff@(posedge clk)
+     begin
+	if(reset)
+	  begin
+	     r_cpr0_compare_reg <= 'd0;
+	  end
+	else
+	  begin
+	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0=='d11))
 	       begin
-		  r_cpr0[exception_wr_cpr0_ptr] <= exception_wr_cpr0_data;
+		  r_cpr0_compare_reg <= t_cpr0_result[31:0];
 	       end
-	  end	
+	  end
+     end
+   
+   
+   always_ff@(posedge clk)
+     begin
+	if(r_start_int && t_wr_cpr0)
+	  begin
+	     r_cpr0[t_dst_cpr0] <= t_cpr0_result;
+	  end
+	/* this is a terrible hack for linux o32 syscall emulation */
+	else if(r_start_int && t_set_thread_area)
+	  begin
+	     r_cpr0['d29] <= t_cpr0_result;
+	  end
+	else if(exception_wr_cpr0_val)
+	  begin
+	     r_cpr0[exception_wr_cpr0_ptr] <= exception_wr_cpr0_data;
+	  end
      end
 
 

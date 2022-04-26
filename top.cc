@@ -84,6 +84,10 @@ void record_l1d(int req, int ack, int ack_st, int blocked, int stall_reason) {
 
 static std::map<int, uint64_t> int_sched_rdy_map;
 
+void put_char(char c) {
+  std::cout << c;
+}
+
 void report_exec(int int_valid, int int_ready,
 		 int mem_valid, int mem_ready,
 		 int fp_valid,  int fp_ready,
@@ -888,14 +892,18 @@ int main(int argc, char **argv) {
     if(tb->in_flush_mode) {
       ++n_flush_cycles;
     }
-
-    //if(tb->extern_irq) {
-    //tb->extern_irq = 0;
-    //}
     
-    //if((globals::cycle & ((1UL<<8)-1)) == 0) {
-    //std::cout << "firing irq at cycle " << globals::cycle << "\n";
-    //tb->extern_irq = 1;
+    //if(tb->extern_irq_ack) {
+    //globals::trace_retirement = true;
+    //}
+
+    if(tb->extern_irq) {
+	tb->extern_irq = 0;
+    }
+    
+    //if((globals::cycle & ((1UL<<18)-1)) == 0) {
+      //std::cout << "firing irq at cycle " << globals::cycle << "\n";
+      //tb->extern_irq = 1;
     //}
     
     
@@ -976,7 +984,7 @@ int main(int argc, char **argv) {
 		    <<" \n";
 	}
       }
-      assert(!retired_same_pc);
+      //assert(!retired_same_pc);
       
       if( enable_checker) {
 	//std::cout << std::hex << tb->retire_pc << "," << ss->pc << std::dec << "\n";	  	
