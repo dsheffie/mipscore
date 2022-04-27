@@ -389,7 +389,6 @@ module core(clk,
 			     ACTIVE,
 			     DRAIN,
 			     RAT,
-			     HANDLE_FAULT_WITH_SERIALIZE,
 			     ALLOC_FOR_SERIALIZE,
 			     MONITOR_FLUSH_CACHE,
 			     HANDLE_MONITOR,
@@ -439,6 +438,7 @@ module core(clk,
    popcount #(`LG_ROB_ENTRIES) inflight0 (.in(r_rob_inflight), 
 					  .out(inflight));
 
+   logic r_block_alloc, n_block_alloc;
    
    uop_t t_uop, t_dec_uop, t_alloc_uop;
    uop_t t_uop2, t_dec_uop2, t_alloc_uop2;
@@ -472,21 +472,6 @@ module core(clk,
 
      end
 
-
-`ifdef VERILATOR
-   logic [31:0] r_clear_cnt;
-   always_ff@(posedge clk)
-     begin
-	if(reset)
-	  begin
-	     r_clear_cnt <= 'd0;
-	  end
-	else if(n_ds_done)
-	  begin
-	     r_clear_cnt <=  r_clear_cnt + 'd1;
-	  end
-     end
-`endif
    
    always_ff@(posedge clk)
      begin
@@ -513,6 +498,7 @@ module core(clk,
 	     r_got_break <= 1'b0;
 	     r_got_syscall <= 1'b0;
 	     r_got_ud <= 1'b0;
+	     r_block_alloc <= 1'b0;
 	     r_ready_for_resume <= 1'b0;
 	     r_l1i_flush_complete <= 1'b0;
 	     r_l1d_flush_complete <= 1'b0;
@@ -542,6 +528,7 @@ module core(clk,
 	     r_got_break <= n_got_break;
 	     r_got_syscall <= n_got_syscall;
 	     r_got_ud <= n_got_ud;
+	     r_block_alloc <= n_block_alloc;
 	     r_ready_for_resume <= n_ready_for_resume;
 	     r_l1i_flush_complete <= n_l1i_flush_complete;
 	     r_l1d_flush_complete <= n_l1d_flush_complete;
@@ -695,11 +682,11 @@ module core(clk,
    
 //`define DEBUG
 
-//`define DUMP_ROB
+`define DUMP_ROB
 `ifdef DUMP_ROB
    always_ff@(negedge clk)
      begin
-	if(/*r_cycle >= 'd18147308*/1)
+	if(r_block_alloc & 1'b0)
 	  begin
 	     $display("cycle %d : state = %d, alu complete %b, mem complete %b,head_ptr %d, inflight %d, complete %b,  can_retire_rob_head %b, head pc %x, empty %b, full %b", 
 		      r_cycle,
@@ -781,6 +768,7 @@ module core(clk,
 	t_clr_rob = 1'b0;
 	t_clr_dq = 1'b0;
 	n_state = r_state;
+	n_block_alloc = r_block_alloc;
 	n_restart_cycles = r_restart_cycles + 'd1;
 	n_restart_pc = r_restart_pc;
 	n_restart_src_pc = r_restart_src_pc;
@@ -852,7 +840,7 @@ module core(clk,
 		  && !t_rob_head.in_delay_slot)
 		 begin
 		    n_state = IRQ_WRITE_EPC;
-		    n_cause = 'd0;
+		    n_cause = EXCCODE_INT;
 		    n_restart_pc = 64'h9d000180;
 		    n_machine_clr = 1'b1;
 		    n_ds_done = 1'b1;
@@ -863,39 +851,24 @@ module core(clk,
 		 begin
 		    if(t_rob_head.faulted)
 		      begin
-			 //`define REPORT_FAULTS
-`ifdef REPORT_FAULTS
-			  $display("cycle %d : got fault for %x, break %d, ii %d, trap %d, tlb %b, rob head %d, rob tail %d",
-			  	   r_cycle, 
-			  	   t_rob_head.pc, 
-			  	   t_rob_head.is_break,
-			  	   t_rob_head.is_ii,
-			  	   t_rob_head.take_trap,
-			  	   t_rob_head.exception_tlb_refill,
-			  	   r_rob_head_ptr[`LG_ROB_ENTRIES-1:0],
-			  	   r_rob_tail_ptr[`LG_ROB_ENTRIES-1:0]
-			  	   );
-`endif
 			 if(t_rob_head.is_ii)
 			   begin
 			      n_got_ud = 1'b1;
 			      n_flush_req = 1'b1;
-			      n_cause = 5'd10;
+			      n_cause = EXCCODE_RI;
 			      n_state = WRITE_EPC;
 			   end
 			 else if(t_rob_head.take_trap)
 			   begin
 			      n_flush_req = 1'b1;
-			      n_cause = 5'd13;
+			      n_cause = EXCCODE_TR;
 			      n_state = WRITE_EPC;
 			   end
 			 else if(t_rob_head.exception_tlb_refill)
 			   begin
 			      n_flush_req = 1'b1;
-			      n_cause = t_rob_head.is_store ? 5'd3 : 5'd2;
+			      n_cause = t_rob_head.is_store ? EXCCODE_TLBS : EXCCODE_TLBL;
 			      n_state = WRITE_BADVADDR;
-			      $display("exception for tlb refill for pc %x, vaddr %x, is store %b", 
-				       t_rob_head.pc, t_rob_head.data, t_rob_head.is_store);
 			   end
 			 else if(t_rob_head.exception_tlb_modified)
 			   begin
@@ -905,13 +878,16 @@ module core(clk,
 			   begin
 			      $stop();
 			   end
-			 // else if(t_rob_head.is_syscall)
-			 //   begin
-			 //      n_got_syscall = 1'b1;
-			 //      n_cause = 5'd8;
-			 //      n_flush_req = 1'b1;
-			 //      n_state = WRITE_EPC;
-			 //   end
+			  else if(t_rob_head.is_syscall)
+			    begin
+			       n_got_syscall = 1'b1;
+			       n_ds_done = 1'b1;
+			       t_retire = 1'b1;
+			       n_cause = EXCCODE_SYS;
+			       n_flush_req = 1'b1;
+			       n_state = IRQ_WRITE_EPC;
+			       n_restart_valid = 1'b1;			       
+			    end
 			 else
 			   begin
 			      n_ds_done = !t_rob_head.has_delay_slot;
@@ -919,24 +895,26 @@ module core(clk,
 			      n_restart_cycles = 'd1;
 			      n_restart_valid = 1'b1;
 			   end // else: !if(t_rob_head.is_ii)
+			 
 			 n_machine_clr = 1'b1;
 			 n_delayslot_rob_ptr = r_rob_next_head_ptr[`LG_ROB_ENTRIES-1:0];
-			 n_restart_pc = t_rob_head.target_pc;
+			 n_restart_pc = t_rob_head.is_syscall ? 64'h9d000180 :
+					t_rob_head.target_pc;
 			 n_restart_src_pc = t_rob_head.pc;
 			 n_restart_src_is_indirect = t_rob_head.is_indirect && !t_rob_head.is_ret;
 			 
 			 n_has_delay_slot = t_rob_head.has_delay_slot;
 			 n_has_nullifying_delay_slot = t_rob_head.has_nullifying_delay_slot;
 			 n_take_br = t_rob_head.take_br;
-			 t_bump_rob_head = 1'b1;
+			 t_bump_rob_head = !t_rob_head.is_syscall;
 		      end // if (t_rob_head.faulted)
 		    else if(!t_dq_empty)
 		      begin
 			 if(t_uop.serializing_op)
 			   begin
-			      if(/*r_inflight*/t_rob_empty)
+			      if(t_rob_empty)
 				begin
-				   n_state = (t_uop.op == MONITOR || t_uop.op == SYSCALL) ? 
+				   n_state = (t_uop.op == MONITOR) ? 
 					     HANDLE_MONITOR : ALLOC_FOR_SERIALIZE;
 				   n_monitor_reason = t_uop.imm;
 				end
@@ -964,16 +942,18 @@ module core(clk,
 			      t_possible_to_alloc = !t_rob_full
 						    && !t_uq_full
 						    && !t_dq_empty;
-
+			      
+			      //n_block_alloc = t_uop.fenced_op | r_block_alloc;
+			      
 			      t_alloc = !t_rob_full
+					&& !r_block_alloc
+					&& (t_uop.fenced_op ? (inflight == 'd0) : 1'b1)		
 					&& !t_uq_full
 					&& !t_dq_empty					
 					&& t_enough_iprfs
 					&& t_enough_hlprfs
 					&& t_enough_fprfs
 					&& t_enough_fcrprfs;
-			      
-					
 			      
 			      t_alloc_two = t_alloc
 					    && !t_uop2.serializing_op
@@ -983,9 +963,7 @@ module core(clk,
 					    && t_enough_next_iprfs
 					    && t_enough_next_hlprfs
 					    && t_enough_next_fprfs
-					    && t_enough_next_fcrprfs
-					    ;
-			      //&& (t_uop2.op == NOP || t_uop2.op == J);
+					    && t_enough_next_fcrprfs;
 			   end // else: !if(t_uop.serializing_op && !t_dq_empty)
 		      end // if (!t_dq_empty)
 		    t_retire = t_rob_head_complete;
@@ -1034,11 +1012,6 @@ module core(clk,
 				       end
 				   endcase // case (t_uop.imm)
 				end // if (t_uop.op == MONITOR)
-			      else if(t_uop.op == SYSCALL)
-				begin
-				   n_flush_req = 1'b1;
-				   n_state = MONITOR_FLUSH_CACHE;
-				end
 			      else
 				begin
 				   n_state =  ALLOC_FOR_SERIALIZE;
@@ -1068,9 +1041,13 @@ module core(clk,
 			 t_possible_to_alloc = !t_rob_full
 					       && !t_uq_full
 					       && !t_dq_empty;
+
+
+			 n_block_alloc = t_uop.fenced_op | r_block_alloc;
 			 
 			 t_alloc = !t_rob_full
-				   && !t_uop.serializing_op
+				   && !r_block_alloc
+				   && (t_uop.fenced_op ? (inflight == 'd0) : 1'b1)
 				   && !t_uq_full
 				   && !t_dq_empty
 				   && t_enough_iprfs
@@ -1123,14 +1100,14 @@ module core(clk,
 	  IRQ_WRITE_EPC:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
-	       t_exception_wr_cpr0_ptr = 5'd14;
+	       t_exception_wr_cpr0_ptr = CPR0_EPC;
 	       t_exception_wr_cpr0_data = t_rob_head.pc;
 	       n_state = IRQ_WRITE_CAUSE;
 	    end
 	  IRQ_WRITE_CAUSE:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
-	       t_exception_wr_cpr0_ptr = 5'd13;
+	       t_exception_wr_cpr0_ptr = CPR0_CAUSE;
 	       t_exception_wr_cpr0_data = 64'd0;
 	       t_exception_wr_cpr0_data = {33'd0, 15'd0, 8'd0, 1'b0, r_cause, 2'b0};
 	       n_state = IRQ_WRITE_SR;
@@ -1158,6 +1135,7 @@ module core(clk,
 		    n_state = ACTIVE;
 		    n_ds_done = 1'b0;
 		    t_restart_complete = 1'b1;
+		    n_block_alloc = 1'b0;
 		 end
 	    end
 	  ALLOC_FOR_SERIALIZE:
@@ -1253,16 +1231,10 @@ module core(clk,
 		    if(n_got_restart_ack)
 		      begin
 			 t_retire = 1'b1;
-			 //$display(">>>> monitor/syscall at %x complete at cycle %d, restart to %x",
-			 //t_rob_head.pc, r_cycle, n_restart_pc);			 
 			 n_state = ACTIVE;
 		      end
 		 end
 	    end // case: WAIT_FOR_MONITOR
-	  HANDLE_FAULT_WITH_SERIALIZE:
-	    begin
-	       $stop();
-	    end
 	  FLUSH_FOR_HALT:
 	    begin
 	       if(n_l1i_flush_complete && n_l1d_flush_complete)
@@ -1309,21 +1281,21 @@ module core(clk,
 	  WRITE_EPC:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
-	       t_exception_wr_cpr0_ptr = 5'd14;
+	       t_exception_wr_cpr0_ptr = CPR0_EPC;
 	       t_exception_wr_cpr0_data = t_rob_head.in_delay_slot ? (t_rob_head.pc - 'd4) : t_rob_head.pc;
 	       n_state = WRITE_CAUSE;
 	    end
 	  WRITE_CAUSE:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
-	       t_exception_wr_cpr0_ptr = 5'd13;
+	       t_exception_wr_cpr0_ptr = CPR0_CAUSE;
 	       t_exception_wr_cpr0_data = {32'd0, t_rob_head.in_delay_slot, 15'd0, 8'd0, 1'b0, r_cause, 2'b0};
-	       n_state = FLUSH_FOR_HALT; 	       
+	       n_state =  FLUSH_FOR_HALT;
 	    end
 	  WRITE_BADVADDR:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
-	       t_exception_wr_cpr0_ptr = 5'd8;
+	       t_exception_wr_cpr0_ptr = CPR0_BADVADDR;
 	       t_exception_wr_cpr0_data = t_rob_head.data;
 	       n_state = WRITE_EPC;
 	    end
@@ -1466,10 +1438,6 @@ module core(clk,
 	
 	t_alloc_uop = t_uop;
 	t_alloc_uop2 = t_uop2;
-`ifdef VERILATOR
-	t_alloc_uop.clear_id = r_clear_cnt;
-	t_alloc_uop2.clear_id = r_clear_cnt;
-`endif
 	
 	if(t_uop.srcA_valid || t_uop.fp_srcA_valid)
 	  begin
@@ -2414,27 +2382,11 @@ module core(clk,
 	t_push_2 = t_alloc_two && !t_fold_uop2;
      end
 
-   //always_ff@(negedge clk)
-   //begin
-        //$display("t_alloc = %b, %x t_alloc_two = %b, %x, t_push_1 = %b, t_push_2 = %b, inflight = %b",
-        //t_alloc, t_uop.pc, t_alloc_two, t_uop2.pc, 
-	//t_push_1, t_push_2, r_rob_inflight);
-	
-        //if(t_push_1 && t_push_2 && t_uop.pc == 'h20078)
-        //begin
-	//
-        //$stop();
-        //end
-     //end
-
    
    exec e (
 	   .clk(clk), 
 	   .reset(reset),
 	   .divide_ready(t_divide_ready),
-`ifdef VERILATOR
-	   .clear_cnt(r_clear_cnt),
-`endif
 	   .ds_done(r_ds_done),
 	   .machine_clr(r_machine_clr),
 	   .restart_complete(t_restart_complete),
@@ -2452,7 +2404,6 @@ module core(clk,
 	   .uq_uop_two(t_alloc_uop2),	   
 	   .uq_push(t_push_1 || (!t_push_1 && t_push_2)),
 	   .uq_push_two(t_push_2 && t_push_1),
-	   	   
 	   .complete_bundle_1(t_complete_bundle_1),
 	   .complete_valid_1(t_complete_valid_1),
 	   .complete_bundle_2(t_complete_bundle_2),

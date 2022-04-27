@@ -111,6 +111,58 @@ typedef enum logic [4:0] {
    MEM_NOP = 5'd26			  
 } mem_op_t;
 
+
+typedef enum logic [4:0] {
+      CPR0_INDEX = 5'd0,
+      CPR0_RANDOM = 5'd1,
+      CPR0_ENTRYL0 = 5'd2,
+      CPR0_ENTRYL1 = 5'd3,
+      CPR0_CONTEXT = 5'd4,
+      CPR0_PAGEMASK = 5'd5,
+      CPR0_WIRED = 5'd6,
+      CPR0_BADVADDR = 5'd8,
+      CPR0_COUNT = 5'd9,
+      CPR0_ENTRYHI = 5'd10,
+      CPR0_COMPARE = 5'd11,
+      CPR0_STATUS = 5'd12,
+      CPR0_CAUSE = 5'd13,
+      CPR0_EPC = 5'd14,
+      CPR0_PRID = 5'd15,
+      CPR0_CONFIG = 5'd16,
+      CPR0_LLADDR = 5'd17,
+      CPR0_WATCHLO = 5'd18,
+      CPR0_WATCHHI = 5'd19,
+      CPR0_XCONTEXT = 5'd20,
+      CPR0_FRAMEMASK = 5'd21,
+      CPR0_BRDIAG = 5'd22,
+      CPR0_PC = 5'd25,
+      CPR0_ECC = 5'd26,
+      CPR0_CACHEERR = 5'd27,
+      CPR0_TAGLO = 5'd28,
+      CPR0_TAGHI = 5'd29,
+      CPR0_ERROREPC = 5'd30
+} mips_cpr0_t;
+
+typedef enum logic [4:0] {
+  EXCCODE_INT = 5'd0,
+  EXCCODE_MOD = 5'd1,
+  EXCCODE_TLBL = 5'd2,
+  EXCCODE_TLBS = 5'd3,
+  EXCCODE_ADEL = 5'd4,
+  EXCCODE_ADEH = 5'd5,
+  EXCCODE_IDE = 5'd6,			  			  
+  EXCCODE_DBE = 5'd7,			  			  			  
+  EXCCODE_SYS = 5'd8,
+  EXCCODE_BP = 5'd9,
+  EXCCODE_RI = 5'd10,
+  EXCCODE_CPU = 5'd11,
+  EXCCODE_OV = 5'd12,
+  EXCCODE_TR = 5'd13,
+  EXCCODE_FPE = 5'd15,
+  EXCCODE_WATCH = 5'd23			   
+} mips_exccode_t;
+
+
 /* MIPS R10000 exception ordering 
 * Cold Reset (highest priority)
 * Soft Reset

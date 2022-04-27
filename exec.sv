@@ -24,9 +24,6 @@ import "DPI-C" function void report_exec(input int int_valid,
 
 module exec(clk, 
 	    reset,
-`ifdef VERILATOR
-	    clear_cnt,
-`endif
 	    divide_ready,
 	    ds_done,
 	    machine_clr,
@@ -64,19 +61,15 @@ module exec(clk,
 	    monitor_rsp_data_valid);
    input logic clk;
    input logic reset;
-`ifdef VERILATOR
-   input logic [31:0] clear_cnt;
-`endif
-   output logic       divide_ready;
    input logic ds_done;
    input logic machine_clr;
    input logic restart_complete;
    input logic [`LG_ROB_ENTRIES-1:0] delayslot_rob_ptr;
+   
+   output logic 		     divide_ready;   
    output logic 		     in_32fp_reg_mode;
    output logic [(`M_WIDTH-1):0]     cpr0_status_reg;
    output logic 		     cpr0_timer_irq;
-
-   
    localparam N_ROB_ENTRIES = (1<<`LG_ROB_ENTRIES);   
    output logic [N_ROB_ENTRIES-1:0]  uq_wait;   
    output logic [N_ROB_ENTRIES-1:0]  mq_wait;
@@ -171,8 +164,6 @@ module exec(clk,
    logic 	t_alu_valid;
    logic 	t_got_break;
    logic 	t_got_syscall;
-   /* yet another hack for linux syscall emulation */
-   logic 	t_set_thread_area;
       
    mem_req_t r_mem_q[N_MQ_ENTRIES-1:0];
    logic [`LG_MQ_ENTRIES:0] r_mq_head_ptr, n_mq_head_ptr;
@@ -891,21 +882,10 @@ module exec(clk,
 	t_pop_uq = 1'b0;
 	t_alu_sched_full = (&r_alu_sched_valid);
 	
-	//t_pop_uq = t_flash_clear ? 1'b0 :
-	//t_uq_empty ? 1'b0 : 
-	//!t_srcs_rdy ? 1'b0 : 
-	//(r_wb_bitvec[0]) ? 1'b0 :
-	//	   t_start_mul & r_wb_bitvec[`MUL_LAT] ? 1'b0 : 
-	//(t_start_div32 & (!t_div_ready || r_wb_bitvec[`DIV32_LAT])) ? 1'b0 :
-	//1'b1;
-
 	t_pop_uq = t_flash_clear ? 1'b0 :
 		   t_uq_empty ? 1'b0 :
 		   t_alu_sched_full ? 1'b0 :
 		   1'b1;
-
-	
-	//r_start_int = t_pop_uq;
 	
      end
    
@@ -928,23 +908,6 @@ module exec(clk,
 	       end
 	  end // else: !if(reset)
      end
-   
-   // always_ff@(negedge clk)
-   //   begin
-   // 	$display("r_alu_sched_valid = %b, t_uq_empty = %b, t_alu_sched_full = %b", r_alu_sched_valid, t_uq_empty, t_alu_sched_full);
-   // 	$display("t_alu_entry_rdy = %b", t_alu_entry_rdy);
-   // 	for(integer i = 0; i < 4; i=i+1)
-   // 	  begin
-   // 	     if(r_alu_sched_valid[i])
-   // 	       begin
-   // 		  $display("entry %d, pc %x : %b %b %b %b %b", i, r_alu_sched_uops[i].pc, r_alu_srcA_rdy[i], r_alu_srcB_rdy[i], r_alu_srcC_rdy[i], r_alu_hilo_rdy[i], r_alu_fcr_rdy[i]);
-   // 	       end
-   // 	  end
-   // 	if(t_pop_uq)
-   // 	  begin
-   // 	     $display("t_alu_alloc_entry = %b", t_alu_alloc_entry);
-   // 	  end
-   //   end // always_ff@ (negedge clk)
    
    
    count_leading_zeros #(.LG_N(5)) c0(.in(t_srcA[31:0]), .y(w_clz));
@@ -992,18 +955,6 @@ module exec(clk,
 
    assign divide_ready = t_div_ready;
 
-   // always_ff@(negedge clk)
-   //   begin
-   // 	if(t_start_div32)
-   // 	  begin
-   // 	     $display("divider starts at cycle %d for pc %x, will write to hilo prf %d, r_wb_bitvec = %b", r_cycle, int_uop.pc, int_uop.hilo_dst, r_wb_bitvec[`DIV32_LAT]);
-   // 	  end
-   // 	if(t_div_complete)
-   // 	  begin
-   // 	     $display("divide completes at cycle %d, writes to hilo prf %d", r_cycle, t_div_hilo_prf_ptr_out);
-   // 	  end
-			  
-   //   end
    
    always_comb
      begin
@@ -1263,7 +1214,6 @@ module exec(clk,
 	t_pc8 = int_uop.pc + {{HI_EBITS{1'b0}}, 32'd8};
 	t_result = {`M_WIDTH{1'b0}};
 	t_cpr0_result = {`M_WIDTH{1'b0}};
-	t_set_thread_area = 1'b0;	
 	t_result32 = 32'd0;
 	t_unimp_op = 1'b0;
 	t_fault = 1'b0;
@@ -1301,21 +1251,10 @@ module exec(clk,
 	    end
 	  SYSCALL:
 	    begin
-	       //4283 is set_thread_area
 	       t_alu_valid = 1'b1;
 	       t_got_syscall = 1'b1;
 	       t_mispred_br = 1'b1;
-	       //t_fault = 1'b1;
-	       if(t_srcB == 'd4283)
-		 begin
-		    t_result = 'd0;
-		    t_set_thread_area = 1'b1;
-		    t_cpr0_result = monitor_rsp_data;
-		 end
-	       else
-		 begin
-		    t_result = monitor_rsp_data;
-		 end
+	       t_result = monitor_rsp_data;
 	       t_wr_int_prf = 1'b1;	       
 	       t_pc = t_pc4;
 	    end
@@ -1801,7 +1740,7 @@ module exec(clk,
 	       t_wr_int_prf = int_uop.dst_valid;
 	       t_pc = t_pc4;
 	       t_wr_cpr0 = 1'b1;
-	       t_dst_cpr0 = 'd12;
+	       t_dst_cpr0 = CPR0_STATUS;
 	       t_cpr0_result = {t_cpr0_srcA[(`M_WIDTH-1):1], 1'b0};
 	    end
 	  EI:
@@ -1811,7 +1750,7 @@ module exec(clk,
 	       t_wr_int_prf = int_uop.dst_valid;
 	       t_pc = t_pc4;
 	       t_wr_cpr0 = 1'b1;
-	       t_dst_cpr0 = 'd12;
+	       t_dst_cpr0 = CPR0_STATUS;
 	       t_cpr0_result = {t_cpr0_srcA[(`M_WIDTH-1):1], 1'b1};
 	    end
 	  ERET:
@@ -1839,7 +1778,7 @@ module exec(clk,
 		      t_cpr0_result = t_srcA;	      
 		   end
 	       endcase
-	       if(int_uop.dst[4:0] == 5'd12)
+	       if(int_uop.dst[4:0] == CPR0_STATUS)
 		 begin
 		    n_in_32b_mode = (t_srcA[5] == 1'b0);
 		    n_in_32fp_reg_mode = (t_srcA[26] == 1'b1);
@@ -2712,7 +2651,7 @@ module exec(clk,
 	  end
 	else
 	  begin
-	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0=='d12))
+	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_STATUS))
 	       begin
 		  cpr0_status_reg <= t_cpr0_result;
 	       end
@@ -2733,7 +2672,7 @@ module exec(clk,
 	  end
 	else
 	  begin
-	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0=='d9))
+	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_COUNT))
 	       begin
 		  r_cpr0_count_reg <= t_cpr0_result[31:0];
 	       end
@@ -2753,7 +2692,7 @@ module exec(clk,
 	  end
 	else
 	  begin
-	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0=='d11))
+	     if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_COMPARE))
 	       begin
 		  r_cpr0_compare_reg <= t_cpr0_result[31:0];
 	       end
@@ -2766,11 +2705,6 @@ module exec(clk,
 	if(r_start_int && t_wr_cpr0)
 	  begin
 	     r_cpr0[t_dst_cpr0] <= t_cpr0_result;
-	  end
-	/* this is a terrible hack for linux o32 syscall emulation */
-	else if(r_start_int && t_set_thread_area)
-	  begin
-	     r_cpr0['d29] <= t_cpr0_result;
 	  end
 	else if(exception_wr_cpr0_val)
 	  begin
@@ -2872,28 +2806,10 @@ module exec(clk,
        else
 	 begin
 	    complete_valid_2 <= t_fp_wr_prf || t_fpu_result_valid || t_fpu_fcr_valid || t_sp_div_valid || t_dp_div_valid;
-	    // if(t_fp_wr_prf && t_fpu_result_valid)
-	    //   $stop();
-	    // if(t_fpu_result_valid && t_fpu_fcr_valid)
-	    //   $stop();
-	    // if( t_fp_wr_prf && t_fpu_fcr_valid)
-	    //   $stop();
-	    //if(t_fp_wr_prf || t_fpu_result_valid || t_fpu_fcr_valid)
-	    //$display("cycle %d : t_fp_wr_prf = %b, t_fpu_result_valid = %b, t_fpu_fcr_valid = %b", 
-	    //r_cycle, t_fp_wr_prf, t_fpu_result_valid, t_fpu_fcr_valid);
 	 end
     end // always_ff@ (posedge clk)
 
-   // always_ff@(negedge clk)
-   //   begin
-   // 	if(complete_valid_2)
-   // 	  begin
-   // 	     $display("complete_2 valid at cycle %d for rob ptr %d",
-   // 		      r_cycle, complete_bundle_2.rob_ptr);
-   // 	  end
-   //   end
 
-   //t_fpu_fcr_valid
    always_ff@(posedge clk)
      begin
 	if(t_fpu_result_valid || t_fpu_fcr_valid)

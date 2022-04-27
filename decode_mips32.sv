@@ -69,6 +69,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	uop.jmp_imm = {(`M_WIDTH-16){1'b0}};
 	uop.pc = pc;
 	uop.serializing_op = 1'b0;
+	uop.fenced_op = 1'b0;
 	uop.must_restart = 1'b0;
 	uop.rob_ptr = 'd0;
 	uop.br_pred = 1'b0;
@@ -235,16 +236,8 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		 6'd12:
 		   begin
 		      uop.op = SYSCALL;
-		      /* hacks for user-level emulation */
-		      uop.srcA = 'd7;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = 'd2;
-		      uop.srcB_valid = 1'b1;
-		      uop.dst = 'd2;
-		      uop.dst_valid = 1'b1;
-		      /* serializing semantics */
-		      uop.must_restart = 1'b1;
-		      uop.serializing_op = 1'b1;
+		      uop.fenced_op = 1'b1;
+		      uop.dst_valid = 1'b0;
 		      uop.is_int = 1'b1;
 		   end
 		 6'd13:
@@ -797,7 +790,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		    uop.is_int = 1'b1;
 		    uop.dst = rt;
 		    uop.dst_valid = (rt != 'd0);
-		    uop.srcA = 'd12; //status reg
+		    uop.srcA =  {{ZP{1'b0}},CPR0_STATUS};
 		    uop.serializing_op = 1'b1;
 		    uop.must_restart = 1'b1;
 		 end
@@ -807,7 +800,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		    uop.is_int = 1'b1;
 		    uop.dst = rt;
 		    uop.dst_valid = (rt != 'd0);
-		    uop.srcA = 'd12; //status reg
+		    uop.srcA = {{ZP{1'b0}},CPR0_STATUS};
 		    uop.serializing_op = 1'b1;
 		    uop.must_restart = 1'b1;
 		 end
