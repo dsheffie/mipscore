@@ -2,13 +2,14 @@
 `include "rob.vh"
 `include "uop.vh"
 
-module decode_mips32(in_64b_fpreg_mode, insn, 
+module decode_mips32(cpr0_status_reg,
+		     insn, 
 		     pc, insn_pred, pht_idx, insn_pred_target,
 `ifdef ENABLE_CYCLE_ACCOUNTING   		     
 		     fetch_cycle,
 `endif
 		     uop);
-   input logic in_64b_fpreg_mode;
+   input logic [31:0] cpr0_status_reg;
    
    input logic [31:0] insn;
    input logic [`M_WIDTH-1:0] pc;
@@ -39,9 +40,12 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 
    
    logic [`LG_PRF_ENTRIES-1:0] shamt = {{ZP{1'b0}},insn[10:6]};
+
+   logic 		       in_64b_fpreg_mode;
    
    always_comb
      begin
+	in_64b_fpreg_mode = cpr0_status_reg[SR_FR];
 	uop.op = II;
 	uop.srcA = 'd0;
 	uop.srcB = 'd0;
@@ -286,39 +290,6 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		      uop.hilo_dst_valid = 1'b1;
 		      uop.is_int = 1'b1;
 		   end
-		 6'd20: /* dsllv */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = rs;
-		      uop.srcB_valid = 1'b1;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSLLV;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd22: /* dsrlv */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = rs;
-		      uop.srcB_valid = 1'b1;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSRLV;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd23: /* dsrav */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = rs;
-		      uop.srcB_valid = 1'b1;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSRAV;
-		      uop.is_int = 1'b1;
-		   end
 		 6'd24: /* mult */
 		   begin
 		      uop.srcA = rs;
@@ -358,8 +329,9 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		      uop.hilo_dst_valid = 1'b1;
 		      uop.op = DIVU;
 		      uop.is_int = 1'b1;
-		   end	
-		 6'd32: /* HACK */
+		   end
+		 /*
+		 6'd32: 
 		   begin
 		      uop.srcA = rt;
 		      uop.srcA_valid = 1'b1;
@@ -370,6 +342,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		      uop.serializing_op = 1'b1;
 		      uop.must_restart = 1'b1;
 		   end
+		 */
 		 6'd33: /* addu */
 		   begin
 		      uop.srcA = rt;
@@ -381,17 +354,6 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		      uop.op = (rd == 'd0) ? NOP : ADDU;
 		      uop.is_int = 1'b1;
 		   end
-		 6'd45: /* daddu */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = rs;
-		      uop.srcB_valid = 1'b1;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DADDU;
-		      uop.is_int = 1'b1;
-		   end		   
 		 6'd35: /* subu */
 		   begin
 		      uop.srcA = rs;
@@ -481,80 +443,9 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		      uop.op = (rd == 'd0) ? NOP : SLTU;
 		      uop.is_int = 1'b1;
 		   end
-		 6'd47: /* dsubu */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = rs;
-		      uop.srcB_valid = 1'b1;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSUBU;
-		      uop.is_int = 1'b1;
-		   end
 		 6'd52: /* teq */
 		   begin
 		      uop.op = NOP;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd56: /* dsll */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = shamt;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSLL;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd58: /* dsrl */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = shamt;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSRL;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd59: /* dsra */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = shamt;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSRA;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd60: /* dsll32 */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = shamt;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSLL32;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd62: /* dsrl32 */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = shamt;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSRL32;
-		      uop.is_int = 1'b1;
-		   end
-		 6'd63: /* dsra32 */
-		   begin
-		      uop.srcA = rt;
-		      uop.srcA_valid = 1'b1;
-		      uop.srcB = shamt;
-		      uop.dst = rd;
-		      uop.dst_valid = (rd != 'd0);
-		      uop.op = (rd == 'd0) ? NOP : DSRA32;
 		      uop.is_int = 1'b1;
 		   end
 		 default:
@@ -790,7 +681,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		    uop.is_int = 1'b1;
 		    uop.dst = rt;
 		    uop.dst_valid = (rt != 'd0);
-		    uop.srcA =  {{ZP{1'b0}},CPR0_STATUS};
+		    uop.srcA = CPR0_STATUS;
 		    uop.serializing_op = 1'b1;
 		    uop.must_restart = 1'b1;
 		 end
@@ -800,7 +691,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 		    uop.is_int = 1'b1;
 		    uop.dst = rt;
 		    uop.dst_valid = (rt != 'd0);
-		    uop.srcA = {{ZP{1'b0}},CPR0_STATUS};
+		    uop.srcA = CPR0_STATUS;
 		    uop.serializing_op = 1'b1;
 		    uop.must_restart = 1'b1;
 		 end
@@ -812,7 +703,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 			   uop.op = MFC0;
 			   uop.dst = rt;
 			   uop.dst_valid = (rt != 'd0);
-			   uop.srcA = rd;
+			   uop.srcA = decode_cpr0(rd[4:0], insn[2:0]);
 			   uop.srcB = {{ZP{1'b0}}, 2'd0, insn[2:0]};
 			   uop.is_int = 1'b1;
 			   uop.serializing_op = 1'b1;
@@ -822,7 +713,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 			begin
 			   uop.op = MTC0;
 			   uop.dst = rd;
-			   uop.srcA = rt;
+			   uop.srcA = decode_cpr0(rt[4:0], insn[2:0]);
 			   uop.srcA_valid = 1'b1;
 			   uop.srcB = {{ZP{1'b0}}, 2'd0, insn[2:0]};
 			   uop.serializing_op = 1'b1;
@@ -1351,40 +1242,6 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	       uop.br_pred = insn_pred;
 	       uop.is_int = 1'b1;
 	    end
-	  6'd25: /* daddiu */
-	    begin
-	       uop.op = (rt == 'd0) ? NOP : DADDIU;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcA = rs;
-	       uop.dst_valid = (rt != 'd0);
-	       uop.dst = rt;
-	       uop.is_int = 1'b1;
-	       uop.imm = insn[15:0];
-	    end
-	  6'd26: /* LDL */
-	    begin
-	       uop.op = LDL;
-	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcB = rt;
-	       uop.srcB_valid = 1'b1;
-	       uop.dst = rt;
-	       uop.dst_valid = 1'b1;
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;	       
-	    end // case: 6'd26
-	  6'd27: /* LDR */
-	    begin
-	       uop.op = LDR;
-	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcB = rt;
-	       uop.srcB_valid = 1'b1;
-	       uop.dst = rt;
-	       uop.dst_valid = 1'b1;
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;
-	    end // case: 6'd26
 	  6'd28: /* SPECIAL2 */
 	    begin
 	       case(insn[5:0])
@@ -1504,7 +1361,11 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	    end
 	  6'd34: /* LWL */
 	    begin
+`ifdef BIG_ENDIAN
 	       uop.op = LWL;
+`else	      
+	       uop.op = II;
+`endif
 	       uop.srcA = rs;
 	       uop.srcA_valid = 1'b1;
 	       uop.srcB = rt;
@@ -1546,7 +1407,11 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	    end
 	  6'd38: /* LWR */
 	    begin
+`ifdef BIG_ENDIAN	       
 	       uop.op = LWR;
+`else
+	       uop.op = II;
+`endif
 	       uop.srcA = rs;
 	       uop.srcA_valid = 1'b1;
 	       uop.srcB = rt;
@@ -1580,7 +1445,11 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	    end
 	  6'd42:
 	    begin
+`ifdef BIG_ENDIAN
 	       uop.op = SWL;
+`else
+	       uop.op = II;
+`endif
 	       uop.srcA = rs;
 	       uop.srcA_valid = 1'b1;
 	       uop.srcB = rt;
@@ -1599,40 +1468,23 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	       uop.imm = insn[15:0];
 	       uop.is_mem = 1'b1;
 	       uop.is_store = 1'b1;
-	    end
-	  6'd44: /* SDL */
-	    begin
-	       uop.op = SDL;
-	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcB = rt;
-	       uop.srcB_valid = 1'b1;
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;
-	       uop.is_store = 1'b1;
-	    end
-	  6'd45: /* SDR */
-	    begin
-	       uop.op = SDR;
-	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcB = rt;
-	       uop.srcB_valid = 1'b1;
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;
-	       uop.is_store = 1'b1;
-	    end
+	    end // case: 6'd43
 	  6'd46: /* SWR */
-	    begin
-	       uop.op = SWR;
+            begin
+`ifdef BIG_ENDIAN
+               uop.op = SWR;
+`else
+	       uop.op = II;
+`endif
 	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcB = rt;
-	       uop.srcB_valid = 1'b1;
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;
-	       uop.is_store = 1'b1;
-	    end
+               uop.srcA_valid = 1'b1;
+               uop.srcB = rt;
+               uop.srcB_valid = 1'b1;
+               uop.imm = insn[15:0];
+               uop.is_mem = 1'b1;
+               uop.is_store = 1'b1;
+            end
+
 	  6'd48: /* LL - hack treat load-linked as normal load*/
 	    begin
 	       uop.op = LW;
@@ -1670,6 +1522,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	       uop.op = NOP;
 	       uop.is_int = 1'b1;
 	    end
+	  
 	  6'd53: /* LDC1 */
 	    begin
 	       uop.op = LDC1;
@@ -1680,17 +1533,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	       uop.imm = insn[15:0];
 	       uop.is_mem = 1'b1;
 	    end
-	  6'd55: /* LD */
-	    begin
-	       uop.op = LD;
-	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.dst = rt;
-	       uop.dst_valid = (rt != 'd0);
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;
-	    end
-	  
+
 	  // 6'd56: /* SC */
 	  //   begin
 	  //      uop.op = SC;
@@ -1736,17 +1579,6 @@ module decode_mips32(in_64b_fpreg_mode, insn,
 	       uop.is_mem = 1'b1;
 	       uop.is_store = 1'b1;
 	    end
-	  6'd63: /* SD */
-	    begin
-	       uop.op = SD;
-	       uop.srcA = rs;
-	       uop.srcA_valid = 1'b1;
-	       uop.srcB = rt;
-	       uop.srcB_valid = 1'b1;
-	       uop.imm = insn[15:0];
-	       uop.is_mem = 1'b1;
-	       uop.is_store = 1'b1;
-	    end	  
 	  default:
 	    begin
 	    end

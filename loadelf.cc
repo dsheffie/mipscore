@@ -94,6 +94,20 @@ bool checkLittleEndian(const Elf32_Ehdr *eh32) {
   return (eh32->e_ident[EI_DATA] == ELFDATA2LSB);
 }
 
+static uint32_t remap_addr(uint32_t va) {
+  mips32_seg_t seg = va2seg(va);
+  switch(seg)
+    {
+      /* not mapped */
+    case mips32_seg_t::mips32_kseg1:
+      return va;
+    default:
+      break;
+    }
+  return VA2PA(va);
+}
+
+
 void load_elf(const char* fn, state_t *ms) {
   struct stat s;
   Elf32_Ehdr *eh32 = nullptr;
@@ -150,16 +164,7 @@ void load_elf(const char* fn, state_t *ms) {
   e_shnum = bswap_(eh32->e_shnum);
   sh32 = reinterpret_cast<Elf32_Shdr*>(buf + bswap_(eh32->e_shoff));
   ms->pc = lAddr;
-  ms->linux_image.entry = lAddr;
-  ms->linux_image.elf_flags = bswap_(eh32->e_flags);
-  ms->linux_image.start_code = -1;
-  ms->linux_image.end_code = 0;
-  ms->linux_image.start_data = -1;
-  ms->linux_image.end_data = 0;
-  ms->linux_image.brk = 0;
 
-  uint32_t loaddr = ~0U, hiaddr = 0;
-  ms->linux_image.alignment = 0;
   /* Find instruction segments and copy to
    * the memory buffer */
   for(int32_t i = 0; i < e_phnum; i++, ph32++) {
@@ -168,195 +173,28 @@ void load_elf(const char* fn, state_t *ms) {
     int32_t p_filesz = bswap_(ph32->p_filesz);
     int32_t p_type = bswap_(ph32->p_type);
     uint32_t p_vaddr = bswap_(ph32->p_vaddr);
-    /* stolen from QEMU */
-    if(p_type == PT_LOAD) {
-      uint32_t sz = (p_vaddr + p_memsz);
-      if(sz > ms->linux_image.brk) {
-	ms->linux_image.brk = sz;
-      }
-      loaddr = std::min(loaddr, (p_vaddr - p_offset));
-      hiaddr = std::max(hiaddr, sz);
-      ms->linux_image.nsegs++;
-      ms->linux_image.alignment |= bswap_(ph32->p_align);
-    }
-    uint32_t vaddr_ef = p_vaddr + p_filesz;
-    uint32_t vaddr_em = p_vaddr + p_memsz;
+
     
     if(p_type == SHT_PROGBITS && p_memsz) {
-      if( (p_vaddr + p_memsz) > lAddr) {
-        lAddr = (p_vaddr + p_memsz);
-      }
-      // std::cerr << "loading ELF segment at virtual address "
-      // 		<< std::hex << p_vaddr << std::dec << " of memsz "
-      // 		<< p_memsz << " and filesz "
-      // 		<< p_filesz
-      // 		<< " end virtual address "
-      // 		<< std::hex
-      // 		<< (p_vaddr + p_memsz)
-      // 		<< std::dec
-      // 		<< "\n";
-      
-      mem.prefault(p_vaddr, p_memsz);
-      
-      /* not strictly required, prefault fills with zeros */
-      for(int32_t cc = 0; cc < p_memsz; cc++) {
-	mem.set<uint8_t>(cc+p_vaddr, 0);
-      }
-      
+      uint32_t p_paddr = remap_addr(p_vaddr);
+      std::cout << "should remap address "
+		<< std::hex
+		<< p_vaddr
+		<< "  in "
+		<< va2seg(p_vaddr)
+		<< " to " << p_paddr
+		<< " ends  "
+		<< p_paddr + p_filesz- 1	
+		<< std::dec	
+		<< "\n";
+      //p_paddr = p_vaddr;
       for(int32_t cc = 0; cc < p_filesz; cc++) {
-	mem.set<uint8_t>(cc+p_vaddr, reinterpret_cast<uint8_t*>(buf + p_offset)[cc]);
+	mem.set<uint8_t>(cc+p_paddr, reinterpret_cast<uint8_t*>(buf + p_offset)[cc]);
       }
     }
-    
-  }
-  /* again, stolen from QEMU */
-  ms->linux_image.reserve_brk = 1U<<24;
-  ms->linux_image.load_addr = loaddr;
-  hiaddr += ms->linux_image.reserve_brk;
-  
-  // std::cout << "loaddr = " << std::hex << loaddr << std::dec << "\n";
-  // std::cout << "hiaddr = " << std::hex << hiaddr << std::dec << "\n";
-  // std::cout << "brk = "
-  // 	    << std::hex
-  // 	    << ms->linux_image.brk
-  // 	    << std::dec
-  // 	    << "\n";
-
-
-#ifdef LINUX_SYSCALL_EMULATION
-  /* hacky QEMU linux user code */
-  static const uint64_t initial_stack = 1UL << 23;
-  static const uint64_t guard = 4096;
-  
-  uint32_t start = TASK_UNMAPPED_BASE + guard + initial_stack - 8;
-  ms->linux_image.stack_limit = TASK_UNMAPPED_BASE + guard + initial_stack;
-  
-  uint32_t filename_pos = 0, argv_pos = 0, sp = 0;
-  
-  std::cerr << "start = " << std::hex
-	    << start << std::dec << "\n";
-
-  filename_pos = start - (strlen(fn)+1);
-  for(size_t i = 0, len = strlen(fn); i < len; i++) {
-    mem.at(filename_pos + i) = fn[i];
-  }
-  size_t e_argc = 0, e_size = 0, e_pos = filename_pos;
-  std::vector<uint64_t> env_p;
-  while((environ[e_argc] != nullptr) and false) {
-    size_t l = strlen(environ[e_argc]) + 1;
-    e_pos -= l;
-    env_p.push_back(e_pos);    
-    //std::cerr << "arg start at "
-    //<< std::hex
-    //<< e_pos
-    //<< std::dec
-    //<< ", length = " << l
-    //<< " "
-    //<< environ[e_argc]
-    //<< "\n";
-    for(size_t i = 0, len = strlen(environ[e_argc]); i < len; i++) {
-      mem.at(e_pos + i) = environ[e_argc][i];
-    }
-    e_size += strlen(environ[e_argc]) + 1;
-    ++e_argc;
-  }
-  //std::cerr << "read " << e_argc << " env variables\n";
-  argv_pos = e_pos - (strlen(fn)+1);
-  //std::cerr << "argv_pos = " << std::hex << argv_pos << std::dec << "\n";
-
-  sp = argv_pos & (~0xfUL);
-
-
-  std::cerr << "random bytes start sp = " << std::hex << sp << std::dec << "\n";
-  /* place 16 "random" bytes */
-  sp -= 16;
-  uint32_t rand_pos = sp;
-  for(size_t i = 0; i < 16; i++) {
-    mem.at(i + sp) = static_cast<uint8_t>(i+1);
   }
 
-  /* compute total size of junk we jam on the initial stack */
-  uint32_t size = (DLINFO_ITEMS + 1) * 2;
 
-  /* argc */
-  size += 1;
-  size += 1 /* argv */ + env_p.size() + 2;
-  size *= 4;
-  sp -= size;
-  sp = sp & (~0xfUL);
-
-  
-  /* write argc */
-  uint32_t pos = sp;
-
-  std::cout << "argc at " << std::hex << pos << std::dec << "\n";  
-  *reinterpret_cast<uint32_t*>(mem[pos]) = bswap_(static_cast<uint32_t>(1));  
-  pos += 4;
-  /* argv[0] (pointer) */
-  
-  std::cout << "argv[0] at " << std::hex << pos << std::dec << "\n";  
-  *reinterpret_cast<uint32_t*>(mem[pos]) = bswap_(argv_pos);
-  pos += 4;
-
-  /* terminate argv */
-  std::cout << "argv terminator at " << std::hex << pos << std::dec << "\n";  
-  *reinterpret_cast<uint32_t*>(mem[pos]) = 0;
-  pos += 4;
-
-  env_p.clear();
-  for(uint64_t e : env_p) {
-    //std::cout << "env_p at " << std::hex << pos << std::dec << "\n";  
-    *reinterpret_cast<uint32_t*>(mem[pos]) = e;
-    pos += 4;
-  }
-
-  /* terminate environment pointer */
-  std::cout << "env terminator at " << std::hex << pos << std::dec << "\n";  
-  *reinterpret_cast<uint32_t*>(mem[pos]) = 0;
-  pos += 4;
-  
-  /* now at ELF header stuff - QEMU macro */
-#define NEW_AUX_ENT(id, val) do {					\
-    std::cout << #id << " at " << std::hex << pos << " , pointer at " << pos+4 \
-	      << ", value = " << val << std::dec << "\n";		\
-    *reinterpret_cast<uint32_t*>(mem[pos]) = bswap_(static_cast<uint32_t>(id)); \
-    *reinterpret_cast<uint32_t*>(mem[pos+4]) = bswap_(static_cast<uint32_t>(val)); \
-    pos += 8;								\
-  } while(0)
-
-  NEW_AUX_ENT(AT_PHDR, ms->linux_image.load_addr + e_phoff);
-  NEW_AUX_ENT(AT_PHENT, sizeof(Elf32_Phdr));
-  NEW_AUX_ENT(AT_PHNUM, e_phnum);
-  NEW_AUX_ENT(AT_PAGESZ, 4096);
-  NEW_AUX_ENT(AT_BASE, 0);
-  NEW_AUX_ENT(AT_FLAGS, 0);
-  NEW_AUX_ENT(AT_ENTRY, ms->pc);
-  NEW_AUX_ENT(AT_UID, static_cast<uint32_t>(getuid()));
-  NEW_AUX_ENT(AT_EUID, static_cast<uint32_t>(geteuid()));
-  NEW_AUX_ENT(AT_GID, static_cast<uint32_t>(getgid()));
-  NEW_AUX_ENT(AT_EGID, static_cast<uint32_t>(getegid()));
-  NEW_AUX_ENT(AT_HWCAP, 0);
-  NEW_AUX_ENT(AT_CLKTCK, sysconf(_SC_CLK_TCK));
-  NEW_AUX_ENT(AT_RANDOM, rand_pos);
-  NEW_AUX_ENT(AT_SECURE, 0);
-  NEW_AUX_ENT(AT_EXECFN, filename_pos);
-  NEW_AUX_ENT(AT_NULL, 0);
-
-  std::cerr << "start stack = " << std::hex << sp << std::dec << "\n";
-  ms->linux_image.start_stack = sp;  
-  ms->gpr[29] = ms->linux_image.start_stack;
-
-  uint32_t target_brk = roundToPgSz(ms->linux_image.brk, static_cast<uint32_t>(pgSize)); 
-  ms->linux_image.target_original_brk = target_brk;
-  ms->linux_image.target_brk = target_brk;
-  ms->linux_image.brk_page = roundToPgSz(target_brk, static_cast<uint32_t>(pgSize));
-  
-  ms->linux_image.pgsz = pgSize;
-  
-  //target_set_brk(ms->linux_image.brk, pgSize);
-  //rtl_target_set_brk(ms->linux_image.brk, pgSize);
-
-#endif
   munmap(buf, s.st_size);
   //exit(-1);
 }

@@ -6,6 +6,9 @@
 `define CACHE_STATS 1
 module core_l1d_l1i(clk, 
 		    reset,
+`ifdef VERILATOR
+		    print_rob,
+`endif
 		    extern_irq,
 		    extern_irq_ack,
 		    in_flush_mode,
@@ -55,6 +58,7 @@ module core_l1d_l1i(clk,
 		    got_break,
 		    got_syscall,
 		    got_ud,
+		    in_wait,
 		    inflight,
 		    iside_tlb_miss,
 		    dside_tlb_miss);
@@ -64,9 +68,12 @@ module core_l1d_l1i(clk,
    
    input logic clk;
    input logic reset;
+`ifdef VERILATOR
+   input logic print_rob;
+`endif
    input logic extern_irq;
    output logic extern_irq_ack;
-   input logic resume;
+   input logic 	resume;
    input logic [(`M_WIDTH-1):0] resume_pc;
    output logic 		in_flush_mode;
    output logic 		ready_for_resume;
@@ -118,12 +125,12 @@ module core_l1d_l1i(clk,
 
 
    output logic [4:0] 			  retire_reg_ptr;
-   output logic [(`M_WIDTH-1):0] 	  retire_reg_data;
+   output logic [63:0] 			  retire_reg_data;
    output logic 			  retire_reg_valid;
    output logic 			  retire_reg_fp_valid;
 
    output logic [4:0] 			  retire_reg_two_ptr;
-   output logic [(`M_WIDTH-1):0] 	  retire_reg_two_data;
+   output logic [63:0] 			  retire_reg_two_data;
    output logic 			  retire_reg_two_valid;
    output logic 			  retire_reg_fp_two_valid;
    
@@ -149,6 +156,8 @@ module core_l1d_l1i(clk,
    output logic 			  got_break;
    output logic 			  got_syscall;
    output logic 			  got_ud;
+   output logic 			  in_wait;
+   
    output logic [`LG_ROB_ENTRIES:0] 	  inflight;
    output logic 			  iside_tlb_miss;
    output logic 			  dside_tlb_miss;
@@ -461,7 +470,7 @@ module core_l1d_l1i(clk,
 	      .restart_valid(restart_valid),
 	      .restart_ack(restart_ack),
 	      .retire_reg_ptr(retire_reg_ptr),
-	      .retire_reg_data(retire_reg_data),
+	      .retire_reg_data(retire_reg_data[(`M_WIDTH-1):0]),
 	      .retire_reg_valid(retire_reg_valid),	      
 	      .branch_pc_valid(t_branch_pc_valid),
 	      .took_branch(took_branch),
@@ -513,6 +522,9 @@ module core_l1d_l1i(clk,
    core cpu (
 	     .clk(clk),
 	     .reset(reset),
+`ifdef VERILATOR
+	     .print_rob(print_rob),
+`endif
 	     .extern_irq(extern_irq),
 	     .extern_irq_ack(extern_irq_ack),
 	     .resume(resume),
@@ -579,6 +591,7 @@ module core_l1d_l1i(clk,
 	     .got_break(got_break),
 	     .got_syscall(got_syscall),
 	     .got_ud(got_ud),
+	     .in_wait(in_wait),
 	     .inflight(inflight)
 	     );
    

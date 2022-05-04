@@ -13,7 +13,7 @@ import "DPI-C" function void record_alloc(input int rob_full,
 					  input int two_insn_avail,
 					  input int active);
 
-import "DPI-C" function void record_retirement(input longint pc,
+import "DPI-C" function void record_retirement(input int pc,
 					       input longint fetch_cycle,
 					       input longint alloc_cycle,
 					       input longint complete_cycle,
@@ -25,13 +25,15 @@ import "DPI-C" function void record_retirement(input longint pc,
 
 import "DPI-C" function void record_restart(input int restart_cycles);
 import "DPI-C" function void record_ds_restart(input int delay_cycles);
-import "DPI-C" function int check_insn_bytes(input longint pc, input int data);
 
 
 `endif
 
 module core(clk, 
 	    reset,
+`ifdef VERILATOR	    
+	    print_rob,
+`endif
 	    extern_irq,
 	    extern_irq_ack,
 	    head_of_rob_ptr_valid,
@@ -99,9 +101,13 @@ module core(clk,
 	    got_break,
 	    got_syscall,
 	    got_ud,
+	    in_wait,
 	    inflight);
    input logic clk;
    input logic reset;
+`ifdef VERILATOR
+   input logic print_rob;
+`endif
    input logic extern_irq;
    output logic extern_irq_ack;
    output logic head_of_rob_ptr_valid;
@@ -150,12 +156,12 @@ module core(clk,
    input logic 	 core_mem_rsp_valid;
 
    output logic [4:0] 			  retire_reg_ptr;
-   output logic [(`M_WIDTH-1):0] 	  retire_reg_data;
+   output logic [63:0] 			  retire_reg_data;
    output logic 			  retire_reg_valid;
    output logic 			  retire_reg_fp_valid;
 
    output logic [4:0] 			  retire_reg_two_ptr;
-   output logic [(`M_WIDTH-1):0] 	  retire_reg_two_data;
+   output logic [63:0] 			  retire_reg_two_data;
    output logic 			  retire_reg_two_valid;
    output logic 			  retire_reg_fp_two_valid;
    
@@ -184,6 +190,7 @@ module core(clk,
    output logic 			  got_break;
    output logic 			  got_syscall;
    output logic 			  got_ud;
+   output logic 			  in_wait;
    output logic [`LG_ROB_ENTRIES:0] 	  inflight;
    
    
@@ -316,7 +323,6 @@ module core(clk,
    logic 		     n_l1i_flush_complete, r_l1i_flush_complete;
    logic 		     n_l1d_flush_complete, r_l1d_flush_complete;
    
-   logic 		     t_in_32fp_reg_mode;
    logic [(`M_WIDTH-1):0]    t_cpr0_status_reg;
    logic 		     t_cpr0_timer_irq;
       
@@ -365,7 +371,7 @@ module core(clk,
    logic 		     n_ready_for_resume, r_ready_for_resume;
    
    logic 		     t_exception_wr_cpr0_val;
-   logic [4:0] 		     t_exception_wr_cpr0_ptr;
+   logic [5:0] 		     t_exception_wr_cpr0_ptr;
    logic [`M_WIDTH-1:0]      t_exception_wr_cpr0_data;
    
    mem_req_t t_mem_req;
@@ -385,29 +391,30 @@ module core(clk,
    logic [`LG_ROB_ENTRIES-1:0] n_delayslot_rob_ptr, r_delayslot_rob_ptr;
    
    typedef enum logic [4:0] {
-			     HALT,
-			     ACTIVE,
-			     DRAIN,
-			     RAT,
-			     ALLOC_FOR_SERIALIZE,
-			     MONITOR_FLUSH_CACHE,
-			     HANDLE_MONITOR,
-			     ALLOC_FOR_MONITOR,
-			     WAIT_FOR_MONITOR,
-			     FLUSH_FOR_HALT,
-			     HALT_WAIT_FOR_RESTART,
-			     WAIT_FOR_SERIALIZE_AND_RESTART,
-			     WRITE_EPC,
-			     WRITE_CAUSE,
-			     WRITE_BADVADDR,
-			     EXCEPTION_DRAIN,
-			     IRQ_WRITE_EPC,
-			     IRQ_WRITE_CAUSE,
-			     IRQ_WRITE_SR,
-			     ARCH_WAIT
+			     HALT, //0
+			     ACTIVE, //1
+			     DRAIN, //2
+			     RAT, //3
+			     ALLOC_FOR_SERIALIZE, //4
+			     MONITOR_FLUSH_CACHE, //5
+			     HANDLE_MONITOR, //6
+			     ALLOC_FOR_MONITOR, //7
+			     WAIT_FOR_MONITOR, //8
+			     FLUSH_FOR_HALT, //9
+			     HALT_WAIT_FOR_RESTART, //10
+			     WAIT_FOR_SERIALIZE_AND_RESTART, //11
+			     WRITE_EPC, //12
+			     WRITE_CAUSE, //13
+			     WRITE_BADVADDR, //14
+			     EXCEPTION_DRAIN, //15
+			     IRQ_WRITE_EPC, //16
+			     IRQ_WRITE_CAUSE, //17
+			     IRQ_WRITE_SR, //18
+			     ARCH_WAIT //19
 			     } state_t;
    
    state_t r_state, n_state;
+   logic n_in_wait, r_in_wait;
    logic [31:0] r_restart_cycles, n_restart_cycles;
    logic t_divide_ready;
    
@@ -433,7 +440,7 @@ module core(clk,
    assign got_break = r_got_break;
    assign got_syscall = r_got_syscall;
    assign got_ud = r_got_ud;
-   
+   assign in_wait = r_in_wait;
 
    popcount #(`LG_ROB_ENTRIES) inflight0 (.in(r_rob_inflight), 
 					  .out(inflight));
@@ -469,7 +476,6 @@ module core(clk,
    always_ff@(posedge clk)
      begin
 	r_cycle <= reset ? 'd0 : r_cycle + 'd1;
-
      end
 
    
@@ -498,6 +504,7 @@ module core(clk,
 	     r_got_break <= 1'b0;
 	     r_got_syscall <= 1'b0;
 	     r_got_ud <= 1'b0;
+	     r_in_wait <= 1'b0;
 	     r_block_alloc <= 1'b0;
 	     r_ready_for_resume <= 1'b0;
 	     r_l1i_flush_complete <= 1'b0;
@@ -528,6 +535,7 @@ module core(clk,
 	     r_got_break <= n_got_break;
 	     r_got_syscall <= n_got_syscall;
 	     r_got_ud <= n_got_ud;
+	     r_in_wait <= n_in_wait;
 	     r_block_alloc <= n_block_alloc;
 	     r_ready_for_resume <= n_ready_for_resume;
 	     r_l1i_flush_complete <= n_l1i_flush_complete;
@@ -568,7 +576,7 @@ module core(clk,
 	  end
 	else if(t_rob_head.valid_dst && t_retire && t_rob_head.ldst == 'd4)
 	  begin
-	     r_arch_a0 <= t_rob_head.data;
+	     r_arch_a0 <= t_rob_head.data[(`M_WIDTH-1):0];
 	  end
      end
    
@@ -680,13 +688,10 @@ module core(clk,
 `endif
    
    
-//`define DEBUG
-
-`define DUMP_ROB
-`ifdef DUMP_ROB
+`ifdef VERILATOR
    always_ff@(negedge clk)
      begin
-	if(r_block_alloc & 1'b0)
+	if(print_rob)
 	  begin
 	     $display("cycle %d : state = %d, alu complete %b, mem complete %b,head_ptr %d, inflight %d, complete %b,  can_retire_rob_head %b, head pc %x, empty %b, full %b", 
 		      r_cycle,
@@ -743,6 +748,7 @@ module core(clk,
 	       end
 	  end // else: !if(reset)
      end // always_ff@ (posedge clk)
+
    
    always_comb
      begin
@@ -750,8 +756,8 @@ module core(clk,
 	t_restart_complete = 1'b0;
 	
 	t_exception_wr_cpr0_val = 1'b0;
-	t_exception_wr_cpr0_ptr = 5'd0;
-	t_exception_wr_cpr0_data = 64'd0;
+	t_exception_wr_cpr0_ptr = 6'd0;
+	t_exception_wr_cpr0_data = 32'd0;
 	n_cause = r_cause;
 	
 	n_machine_clr = r_machine_clr;
@@ -809,6 +815,7 @@ module core(clk,
 	n_got_break = r_got_break;
 	n_got_syscall = r_got_syscall;
 	n_got_ud = r_got_ud;
+	n_in_wait = r_in_wait;
 	n_monitor_reason = r_monitor_reason;
 	n_got_restart_ack = r_got_restart_ack;
 	n_ready_for_resume = 1'b0;
@@ -836,12 +843,15 @@ module core(clk,
 	unique case (r_state)
 	  ACTIVE:
 	    begin
-	       if(t_cpr0_status_reg[0] && r_pending_irq && !t_rob_empty 
+	       if(t_cpr0_status_reg[SR_IE] &&
+		  !t_cpr0_status_reg[SR_EXL] &&
+		  r_pending_irq && 
+		  !t_rob_empty 
 		  && !t_rob_head.in_delay_slot)
 		 begin
 		    n_state = IRQ_WRITE_EPC;
 		    n_cause = EXCCODE_INT;
-		    n_restart_pc = 64'h9d000180;
+		    n_restart_pc = 32'h9d000180;
 		    n_machine_clr = 1'b1;
 		    n_ds_done = 1'b1;
 		    t_clr_pending_irq = 1'b1;
@@ -898,7 +908,7 @@ module core(clk,
 			 
 			 n_machine_clr = 1'b1;
 			 n_delayslot_rob_ptr = r_rob_next_head_ptr[`LG_ROB_ENTRIES-1:0];
-			 n_restart_pc = t_rob_head.is_syscall ? 64'h9d000180 :
+			 n_restart_pc = t_rob_head.is_syscall ? 32'h9d000180 :
 					t_rob_head.target_pc;
 			 n_restart_src_pc = t_rob_head.pc;
 			 n_restart_src_is_indirect = t_rob_head.is_indirect && !t_rob_head.is_ret;
@@ -966,6 +976,7 @@ module core(clk,
 					    && t_enough_next_fcrprfs;
 			   end // else: !if(t_uop.serializing_op && !t_dq_empty)
 		      end // if (!t_dq_empty)
+		    		    
 		    t_retire = t_rob_head_complete;
 		    t_retire_two = !t_rob_next_empty
 		    		   && !t_rob_head.faulted
@@ -979,6 +990,9 @@ module core(clk,
 				   && !t_rob_next_head.is_call
 				   && !t_rob_next_head.valid_fcr_dst
 		    		   && !t_rob_next_head.valid_hilo_dst;
+		    //$display("cycle = %d : t_retire = %b, rob head ptr %d, t_retire_two = %b", 
+		    //r_cycle, t_retire, r_rob_head_ptr[`LG_ROB_ENTRIES-1:0], t_retire_two);
+		    
 		 end // if (t_can_retire_rob_head)
 	       else if(!t_dq_empty)
 		 begin
@@ -1071,8 +1085,8 @@ module core(clk,
 	    end // case: ACTIVE
 	  DRAIN:	    
 	    begin
-	       //$display("cycle %d : r_rob_inflight = %b, r_ds_done = %b, t_rob_head_complete = %b", 
-	       //r_cycle, r_rob_inflight, r_ds_done, t_rob_head_complete);
+	       //$display("cycle %d : r_rob_inflight = %b, r_ds_done = %b, t_rob_head_complete = %b, memq_empty = %b", 
+	       //r_cycle, r_rob_inflight, r_ds_done, t_rob_head_complete, memq_empty);
 	       //$display("inflight is_mem %b", r_rob['d5].is_mem);
 
 	       
@@ -1108,16 +1122,20 @@ module core(clk,
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
 	       t_exception_wr_cpr0_ptr = CPR0_CAUSE;
-	       t_exception_wr_cpr0_data = 64'd0;
-	       t_exception_wr_cpr0_data = {33'd0, 15'd0, 8'd0, 1'b0, r_cause, 2'b0};
+	       t_exception_wr_cpr0_data = {1'd0, 15'd0, 8'd0, 1'b0, r_cause, 2'b0};
 	       n_state = IRQ_WRITE_SR;
 	    end
 	  IRQ_WRITE_SR:
 	    begin
+	       t_exception_wr_cpr0_val = 1'b1;
+	       t_exception_wr_cpr0_ptr = CPR0_STATUS;
+	       t_exception_wr_cpr0_data = {t_cpr0_status_reg[31:2], 1'b1, t_cpr0_status_reg[SR_IE]};
 	       n_state = EXCEPTION_DRAIN;
 	    end
 	  EXCEPTION_DRAIN:
 	    begin
+	       //$display("inflight = %b, memq_ready = %b, divide_ready = %b",
+	       //r_rob_inflight, memq_empty, t_divide_ready);
 	       if(r_rob_inflight == 'd0 && memq_empty && t_divide_ready)
 		 begin
 		    n_state = RAT;
@@ -1172,13 +1190,14 @@ module core(clk,
 			 else if(t_rob_head.is_wait)
 			   begin
 			      //interrupts are enabled
-			      if(t_cpr0_status_reg[0])
+			      if(t_cpr0_status_reg[SR_IE] && !t_cpr0_status_reg[SR_EXL])
 				begin
-				   n_state = ARCH_WAIT;				   
+				   n_state = ARCH_WAIT;
+				   n_in_wait = 1'b1;
 				end
 			      else
 				begin
-				   $display("wait without interrupts enabled, the end");
+				   $display("wait in weird mode...sr = %x, cycle %d", t_cpr0_status_reg, r_cycle);
 				   n_got_break = 1'b1;
 				   n_flush_req = 1'b1;
 				   n_cause = 5'd9;
@@ -1276,6 +1295,7 @@ module core(clk,
 	       if(r_pending_irq)
 		 begin
 		    n_state = ACTIVE;
+		    n_in_wait = 1'b0;
 		 end
 	    end
 	  WRITE_EPC:
@@ -1289,14 +1309,14 @@ module core(clk,
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
 	       t_exception_wr_cpr0_ptr = CPR0_CAUSE;
-	       t_exception_wr_cpr0_data = {32'd0, t_rob_head.in_delay_slot, 15'd0, 8'd0, 1'b0, r_cause, 2'b0};
+	       t_exception_wr_cpr0_data = {t_rob_head.in_delay_slot, 15'd0, 8'd0, 1'b0, r_cause, 2'b0};
 	       n_state =  FLUSH_FOR_HALT;
 	    end
 	  WRITE_BADVADDR:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
 	       t_exception_wr_cpr0_ptr = CPR0_BADVADDR;
-	       t_exception_wr_cpr0_data = t_rob_head.data;
+	       t_exception_wr_cpr0_data = t_rob_head.data[(`M_WIDTH-1):0];
 	       n_state = WRITE_EPC;
 	    end
 	  default:
@@ -1691,7 +1711,7 @@ module core(clk,
 	t_rob_tail.is_br = 1'b0;
 	t_rob_tail.is_indirect = 1'b0;
 	t_rob_tail.in_delay_slot = r_in_delay_slot;
-	t_rob_tail.data = {`M_WIDTH{1'b0}};
+	t_rob_tail.data = 64'd0;
 	t_rob_tail.pht_idx = 'd0;
 
 
@@ -1719,7 +1739,7 @@ module core(clk,
 	t_rob_next_tail.is_br = 1'b0;
 	t_rob_next_tail.is_indirect = 1'b0;
 	t_rob_next_tail.in_delay_slot = 1'b0;
-	t_rob_next_tail.data = {`M_WIDTH{1'b0}};
+	t_rob_next_tail.data = 64'd0;
 	t_rob_next_tail.pht_idx = 'd0;
 	
 	if(t_alloc)
@@ -1942,7 +1962,7 @@ module core(clk,
 	       end
 	     if(core_mem_rsp_valid)
 	       begin
-		  r_rob[core_mem_rsp.rob_ptr].data <= core_mem_rsp.data[`M_WIDTH-1:0];
+		  r_rob[core_mem_rsp.rob_ptr].data <= core_mem_rsp.data;
 		  r_rob[core_mem_rsp.rob_ptr].faulted <= core_mem_rsp.faulted;
 		  r_rob[core_mem_rsp.rob_ptr].exception_tlb_refill <= core_mem_rsp.exception_tlb_refill;
 		  r_rob[core_mem_rsp.rob_ptr].exception_tlb_modified <= core_mem_rsp.exception_tlb_modified;
@@ -2326,8 +2346,8 @@ module core(clk,
      end // always_comb
 
    
-   decode_mips32 dec0 (.in_64b_fpreg_mode(t_in_32fp_reg_mode),
-		      .insn(insn.data), 
+   decode_mips32 dec0 (.cpr0_status_reg(t_cpr0_status_reg),
+		       .insn(insn.data), 
 		      .pc(insn.pc), 
 		      .insn_pred(insn.pred), 
 		      .pht_idx(insn.pht_idx),
@@ -2337,7 +2357,7 @@ module core(clk,
 `endif		      
 		      .uop(t_dec_uop));
 
-   decode_mips32 dec1 (.in_64b_fpreg_mode(t_in_32fp_reg_mode),
+   decode_mips32 dec1 (.cpr0_status_reg(t_cpr0_status_reg),
 		      .insn(insn_two.data), 
 		      .pc(insn_two.pc), 
 		      .insn_pred(insn_two.pred), 
@@ -2348,30 +2368,6 @@ module core(clk,
 `endif		      
 		      .uop(t_dec_uop2));
 
-
-`ifdef VERILATOR
-   always_ff@(negedge clk)
-     begin
-   	if(insn_ack)
-   	  begin
-	     if(check_insn_bytes(t_dec_uop.pc, insn.data) == 'd0)
-	       begin
-   		  $display("t_dec_uop.pc = %x, bytes = %x, decoded to op %d", 
-			   t_dec_uop.pc, insn.data, t_dec_uop.op);
-		  $stop();
-	       end
-   	  end
-   	if(insn_ack_two)
-   	  begin
-	     if(check_insn_bytes(t_dec_uop2.pc, insn_two.data) == 'd0)
-	       begin
-   		  $display("t_dec_uop2.pc = %x, bytes = %x, decoded to op %d", 
-			   t_dec_uop2.pc, insn_two.data, t_dec_uop2.op);
-		  $stop();
-	       end
-   	  end
-     end
-`endif //  `ifdef VERILATOR
    
    logic t_push_1, t_push_2;
    
@@ -2391,7 +2387,6 @@ module core(clk,
 	   .machine_clr(r_machine_clr),
 	   .restart_complete(t_restart_complete),
 	   .delayslot_rob_ptr(r_delayslot_rob_ptr),
-	   .in_32fp_reg_mode(t_in_32fp_reg_mode),
 	   .cpr0_status_reg(t_cpr0_status_reg),
 	   .cpr0_timer_irq(t_cpr0_timer_irq),
 	   .mq_wait(mq_wait),

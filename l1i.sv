@@ -414,9 +414,22 @@ endfunction
    assign restart_ack = r_restart_ack;
 
    assign mem_req_valid = r_mem_req_valid;
-   assign mem_req_addr = r_mem_req_addr;
+   assign mem_req_addr = {3'd0, r_mem_req_addr[28:0]};
+   //assign mem_req_addr = r_mem_req_addr;
+   
+   //always_ff@(negedge clk)
+   //begin
+   //if(mem_req_valid)
+   //	  begin
+   //$display("fetching code from physical address %x", mem_req_addr);
+   //end
+   //end
+   
+   //assign mem_req_addr = r_mem_req_addr;
+   
+   
    assign mem_req_tag = 'd0;
-   assign mem_req_opcode = MEM_LW;
+   assign mem_req_opcode = MEM_LOAD_CL;
    assign cache_hits = r_cache_hits;
    assign cache_accesses = r_cache_accesses;
    
@@ -792,6 +805,11 @@ endfunction
 	    end	  
 	  ACTIVE:
 	    begin
+	       //if(va2seg(r_pc[31:0]) != MIPS32_KSEG0)
+	       //begin
+	       //$display("running in weird code segment for pc %x", r_pc[31:0]);
+	       //$stop();
+	       //end
 	       t_cache_idx = r_pc[IDX_STOP-1:IDX_START];
 	       t_cache_tag = r_pc[(`M_WIDTH-1):IDX_STOP];
 	       /* accessed with this address */
@@ -1207,27 +1225,23 @@ endfunction
      end // always_ff@
 
 
-`ifdef VERILATOR
-   always_ff@(negedge clk)
-     begin
-	//if(r_pht_update) $display("update branch table for pht %d, take %b",
-	//r_pht_update_idx, r_take_br);
-	
-	//$display("%b %b %b %b", t_push_insn, t_push_insn2, t_push_insn3, t_push_insn4);
-	record_fetch(t_push_insn ? 32'd1 : 32'd0,
-		     t_push_insn2 ? 32'd1 : 32'd0,
-		     t_push_insn3 ? 32'd1 : 32'd0,
-		     t_push_insn4 ? 32'd1 : 32'd0,
-		     t_insn.pc,
-		     t_insn2.pc,
-		     t_insn3.pc,
-		     t_insn4.pc,
-		     r_resteer_bubble ? 32'd1 : 32'd0,
-		     fq_full ? 32'd1 : 32'd0);
+// `ifdef VERILATOR
+//    always_ff@(negedge clk)
+//      begin
+// 	record_fetch(t_push_insn ? 32'd1 : 32'd0,
+// 		     t_push_insn2 ? 32'd1 : 32'd0,
+// 		     t_push_insn3 ? 32'd1 : 32'd0,
+// 		     t_push_insn4 ? 32'd1 : 32'd0,
+// 		     t_insn.pc,
+// 		     t_insn2.pc,
+// 		     t_insn3.pc,
+// 		     t_insn4.pc,
+// 		     r_resteer_bubble ? 32'd1 : 32'd0,
+// 		     fq_full ? 32'd1 : 32'd0);
 	
 	
-     end
-`endif
+//      end
+// `endif
 	  
 
    ram2r1w #(.WIDTH(2), .LG_DEPTH(`LG_PHT_SZ) ) pht

@@ -81,9 +81,6 @@ void dbt_backtrace();
 
 double timestamp();
 
-uint32_t update_crc(uint32_t crc, uint8_t *buf, size_t len);
-uint32_t crc32(uint8_t *buf, size_t len);
-
 int32_t remapIOFlags(int32_t flags);
 
 template <class T>

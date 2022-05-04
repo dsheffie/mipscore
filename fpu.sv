@@ -1,3 +1,4 @@
+`include "machine.vh"
 `include "fp_compare.vh"
 
 module fpu(clk,
@@ -28,7 +29,7 @@ module fpu(clk,
    
    input logic clk;
    input logic reset;
-   input logic [63:0] pc;
+   input logic [(`M_WIDTH-1):0] pc;
    input opcode_t opcode;
    input logic start;
    

@@ -29,7 +29,6 @@ module exec(clk,
 	    machine_clr,
 	    restart_complete,
 	    delayslot_rob_ptr,
-	    in_32fp_reg_mode,
 	    cpr0_status_reg,
 	    cpr0_timer_irq,
 	    uq_wait,
@@ -67,7 +66,6 @@ module exec(clk,
    input logic [`LG_ROB_ENTRIES-1:0] delayslot_rob_ptr;
    
    output logic 		     divide_ready;   
-   output logic 		     in_32fp_reg_mode;
    output logic [(`M_WIDTH-1):0]     cpr0_status_reg;
    output logic 		     cpr0_timer_irq;
    localparam N_ROB_ENTRIES = (1<<`LG_ROB_ENTRIES);   
@@ -92,7 +90,7 @@ module exec(clk,
    output logic complete_valid_2;   
 
    input logic 	exception_wr_cpr0_val;
-   input logic [4:0] exception_wr_cpr0_ptr;
+   input logic [5:0] exception_wr_cpr0_ptr;
    input logic [`M_WIDTH-1:0] exception_wr_cpr0_data;
    
    output 	mem_req_t mem_req;
@@ -123,7 +121,7 @@ module exec(clk,
    logic [63:0] r_fp_prf [N_FP_PRF_ENTRIES-1:0];
    logic [63:0] r_hilo_prf[N_HILO_PRF_ENTRIES-1:0];
    logic [7:0] 	r_fcr_prf[N_FCR_PRF_ENTRIES-1:0];
-   logic [(`M_WIDTH-1):0] r_cpr0 [31:0];
+   logic [(`M_WIDTH-1):0] r_cpr0 [63:0];
    
    localparam FP_ZP = (`LG_PRF_ENTRIES-5);
    localparam Z_BITS = 64-`M_WIDTH;      
@@ -133,8 +131,6 @@ module exec(clk,
    logic [N_FCR_PRF_ENTRIES-1:0]  r_fcr_prf_inflight, n_fcr_prf_inflight;
    logic [N_HILO_PRF_ENTRIES-1:0] r_hilo_inflight, n_hilo_inflight;
 
-   logic 			  n_in_32b_mode, r_in_32b_mode;
-   logic 			  n_in_32fp_reg_mode, r_in_32fp_reg_mode;
 
    logic [63:0] 		  t_fpu_result;
    logic 			  t_fpu_result_valid;
@@ -156,7 +152,7 @@ module exec(clk,
    
    
    logic 			  t_wr_int_prf, t_wr_cpr0;
-   logic [4:0] 			  t_dst_cpr0;
+   logic [5:0] 			  t_dst_cpr0;
    
    logic 	t_wr_hilo;
    logic 	t_take_br;
@@ -196,7 +192,6 @@ module exec(clk,
    
    
    logic [`M_WIDTH-1:0] t_srcA, t_srcB, t_srcC;
-   logic [`M_WIDTH-1:0] tt_srcA, tt_srcB, tt_srcC;
    logic [`M_WIDTH-1:0] t_mem_srcA, t_mem_srcB;
    
    logic [63:0] 	t_fp_srcA, t_fp_srcB, t_fp_srcC;
@@ -298,23 +293,6 @@ module exec(clk,
    //   end
    
 
-   always_ff@(posedge clk)
-     begin
-	if(reset)
-	  begin
-	     r_in_32b_mode <= 1'b1;
-	     r_in_32fp_reg_mode <= 1'b0;
-	  end
-	else
-	  begin
-`ifdef ENABLE_64BITS 
-	     r_in_32b_mode <= n_in_32b_mode;
-`else
-	     r_in_32b_mode <= 1'b1;
-`endif
-	     r_in_32fp_reg_mode <= n_in_32fp_reg_mode;
-	  end
-     end	
 
    
    always_ff@(posedge clk)
@@ -644,12 +622,9 @@ module exec(clk,
    
    always_comb
      begin
-	tt_srcA = r_int_prf[int_uop.srcA];
-	tt_srcB = r_int_prf[int_uop.srcB];
-	tt_srcC = r_int_prf[int_uop.srcC];
-	t_srcA = r_in_32b_mode ? {{HI_EBITS{1'b0}},tt_srcA[31:0]} : tt_srcA;
-	t_srcB = r_in_32b_mode ? {{HI_EBITS{1'b0}},tt_srcB[31:0]} : tt_srcB;
-	t_srcC = r_in_32b_mode ? {{HI_EBITS{1'b0}},tt_srcC[31:0]} : tt_srcC;
+	t_srcA = r_int_prf[int_uop.srcA];
+	t_srcB = r_int_prf[int_uop.srcB];
+	t_srcC = r_int_prf[int_uop.srcC];
 	t_src_hilo = r_hilo_prf[int_uop.hilo_src];
 	t_mem_srcA = r_int_prf[mem_uq.srcA];
 	t_mem_srcB = r_int_prf[mem_uq.srcB];
@@ -660,7 +635,7 @@ module exec(clk,
 	t_fp_srcC = r_fp_prf[fp_uq.srcC];
 `endif
 	//non-renamed
-	t_cpr0_srcA = r_cpr0[int_uop.srcA[4:0]];
+	t_cpr0_srcA = r_cpr0[int_uop.srcA[5:0]];
      end // always_comb
 
 
@@ -989,7 +964,8 @@ module exec(clk,
 
    assign mem_req = t_mem_head;
    assign mem_req_valid = !mem_q_empty;
-   assign in_32fp_reg_mode = r_in_32fp_reg_mode;
+
+   
    assign uq_wait = r_uq_wait;
    assign mq_wait = r_mq_wait;
    assign fq_wait = r_fq_wait;   
@@ -1207,8 +1183,6 @@ module exec(clk,
       
    always_comb
      begin
-	n_in_32b_mode = r_in_32b_mode;
-	n_in_32fp_reg_mode = r_in_32fp_reg_mode;
 	t_pc = int_uop.pc;
 	t_pc4 = int_uop.pc + {{HI_EBITS{1'b0}}, 32'd4};
 	t_pc8 = int_uop.pc + {{HI_EBITS{1'b0}}, 32'd8};
@@ -1220,7 +1194,7 @@ module exec(clk,
 	t_simm = {{E_BITS{int_uop.imm[15]}},int_uop.imm};
 	t_wr_int_prf = 1'b0;
 	t_wr_cpr0 = 1'b0;
-	t_dst_cpr0 = int_uop.dst[4:0];
+	t_dst_cpr0 = int_uop.dst[5:0];
 	t_take_br = 1'b0;
 	t_mispred_br = 1'b0;
 	t_jaddr = {int_uop.jmp_imm[9:0],int_uop.imm,2'd0};
@@ -1358,13 +1332,6 @@ module exec(clk,
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
-	  DADDU:
-	    begin
-	       t_result = t_srcA + t_srcB;
-	       t_wr_int_prf = 1'b1;
-	       t_alu_valid = 1'b1;
-	       t_unimp_op = r_in_32b_mode;
-	    end
 	  CLZ:
 	    begin
 	       t_result = {{(`M_WIDTH-6){1'b0}}, w_clz};
@@ -1457,13 +1424,6 @@ module exec(clk,
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
-	  DSUBU:
-	    begin
-	       t_result = t_srcA + t_srcB;
-	       t_wr_int_prf = 1'b1;
-	       t_alu_valid = 1'b1;
-	       t_unimp_op = r_in_32b_mode;
-	    end
 	  AND:
 	    begin
 	       t_result = t_srcA & t_srcB;
@@ -1496,9 +1456,7 @@ module exec(clk,
 	    end
 	  SLT:
 	    begin
-	       t_result = r_in_32b_mode ?
-			  (($signed(t_srcB[31:0]) <  $signed(t_srcA[31:0])) ? 'd1 : 'd0) :
-			  (($signed(t_srcB) <  $signed(t_srcA)) ? 'd1 : 'd0);
+	       t_result = (($signed(t_srcB[31:0]) <  $signed(t_srcA[31:0])) ? 'd1 : 'd0);
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end // case: SLT
@@ -1531,16 +1489,14 @@ module exec(clk,
 	    end // case: BNE
 	  BGEZ:
 	    begin
-	       t_take_br = r_in_32b_mode ? (t_srcA[31] == 1'b0) :
-			   (t_srcA[63] == 1'b0);
+	       t_take_br = t_srcA[31] == 1'b0;
 	       t_mispred_br = int_uop.br_pred != t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;	       
 	       t_alu_valid = 1'b1;
 	    end
 	  BGEZAL:
 	    begin
-	       t_take_br = r_in_32b_mode ? (t_srcA[31] == 1'b0) :
-			   (t_srcA[63] == 1'b0);
+	       t_take_br = t_srcA[31] == 1'b0;
 	       t_mispred_br = int_uop.br_pred != t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;	  
      	       t_result = t_take_br ?  int_uop.pc + {{HI_EBITS{1'b0}}, 32'd8} : t_srcB;
@@ -1558,36 +1514,28 @@ module exec(clk,
 	    end
 	  BLTZ:
 	    begin
-	       t_take_br = r_in_32b_mode ?
-			   ($signed(t_srcA[31:0]) < $signed(32'd0)) : 
-			   ($signed(t_srcA) < $signed({`M_WIDTH{1'b0}}));
+	       t_take_br = ($signed(t_srcA) < $signed({`M_WIDTH{1'b0}}));
 	       t_mispred_br = int_uop.br_pred != t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;
 	       t_alu_valid = 1'b1;
 	    end
 	  BLEZ:
 	    begin
-	       t_take_br = r_in_32b_mode ?
-			   ($signed(t_srcA[31:0]) <= $signed(32'd0)) : 
-			   ($signed(t_srcA) <= $signed({`M_WIDTH{1'b0}}));
+	       t_take_br =  ($signed(t_srcA) <= $signed({`M_WIDTH{1'b0}}));
 	       t_mispred_br = int_uop.br_pred != t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;
 	       t_alu_valid = 1'b1;
 	    end
 	  BLEZL:
 	    begin
-	       t_take_br = r_in_32b_mode ?
-			   ($signed(t_srcA[31:0]) < $signed(32'd0)) || (t_srcA[31:0] == 32'd0) : 
-			   ($signed(t_srcA) < $signed({`M_WIDTH{1'b0}})) || (t_srcA == {`M_WIDTH{1'b0}});
+	       t_take_br = ($signed(t_srcA) < $signed({`M_WIDTH{1'b0}})) || (t_srcA == {`M_WIDTH{1'b0}});
 	       t_mispred_br = int_uop.br_pred != t_take_br || !t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;
 	       t_alu_valid = 1'b1;
 	    end
 	  BGTZ:
 	    begin
-	       t_take_br = r_in_32b_mode ? 
-			   ($signed(t_srcA[31:0]) > $signed(32'd0)) :
-			   ($signed(t_srcA) > $signed({`M_WIDTH{1'b0}}));
+	       t_take_br = ($signed(t_srcA) > $signed({`M_WIDTH{1'b0}}));
 	       t_mispred_br = int_uop.br_pred != t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;	       
 	       t_alu_valid = 1'b1;
@@ -1601,27 +1549,21 @@ module exec(clk,
 	    end
 	  BLTZL:
 	    begin
-	       t_take_br = r_in_32b_mode ?
-			   $signed(t_srcA[31:0]) < $signed(32'd0) : 
-			   $signed(t_srcA) < $signed({`M_WIDTH{1'b0}});
+	       t_take_br = $signed(t_srcA) < $signed({`M_WIDTH{1'b0}});
 	       t_mispred_br = (int_uop.br_pred != t_take_br) || !t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;
 	       t_alu_valid = 1'b1;
 	    end
 	  BGTZL:
 	    begin
-	       t_take_br = r_in_32b_mode ?
-			   ($signed(t_srcA[31:0]) > $signed(32'd0)) :			   
-			   ($signed(t_srcA) > $signed({`M_WIDTH{1'b0}}));
+	       t_take_br = ($signed(t_srcA) > $signed({`M_WIDTH{1'b0}}));
 	       t_mispred_br = (int_uop.br_pred != t_take_br) || !t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;
 	       t_alu_valid = 1'b1;
 	    end
 	  BGEZL:
 	    begin
-	       t_take_br = r_in_32b_mode ?
-			   ($signed(t_srcA[31:0]) >= $signed(32'd0)) :
-			   ($signed(t_srcA) >= $signed({`M_WIDTH{1'b0}}));
+	       t_take_br = ($signed(t_srcA) >= $signed({`M_WIDTH{1'b0}}));
 	       t_mispred_br = (int_uop.br_pred != t_take_br) || !t_take_br;
 	       t_pc = t_take_br ? (t_pc4 + {t_simm[`M_WIDTH-3:0], 2'd0}) : t_pc8;
 	       t_alu_valid = 1'b1;
@@ -1705,26 +1647,15 @@ module exec(clk,
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
-	  DADDIU:
-	    begin
-	       t_result = t_srcA + t_simm;
-	       t_wr_int_prf = 1'b1;
-	       t_alu_valid = 1'b1;
-	       t_unimp_op = r_in_32b_mode;
-	    end
 	  SLTI:
 	    begin
-	       t_result = r_in_32b_mode ?
-			  (($signed(t_srcA[31:0]) < $signed(t_simm[31:0])) ? 'd1 : 'd0) : 
-			  (($signed(t_srcA) < $signed(t_simm)) ? 'd1 : 'd0);
+	       t_result =  (($signed(t_srcA) < $signed(t_simm)) ? 'd1 : 'd0);
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
 	  SLTIU:
 	    begin
-	       t_result = r_in_32b_mode ?
-			  (t_srcA[31:0] < t_simm[31:0] ? 'd1 : 'd0) : 
-			  (t_srcA < t_simm ? 'd1 : 'd0);
+	       t_result = (t_srcA < t_simm ? 'd1 : 'd0);
 	       t_wr_int_prf = 1'b1;
 	       t_alu_valid = 1'b1;
 	    end
@@ -1757,6 +1688,10 @@ module exec(clk,
 	    begin
 	       t_pc = t_cpr0_srcA;
 	       t_alu_valid = 1'b1;
+	       t_wr_cpr0 = 1'b1;
+	       t_dst_cpr0 = CPR0_STATUS;
+	       t_cpr0_result = {cpr0_status_reg[31:2], 1'b0, 
+				cpr0_status_reg[SR_IE]};
 	    end
 	  WAIT:
 	    begin
@@ -1771,18 +1706,13 @@ module exec(clk,
 	       case(int_uop.dst[4:0])
 		 5'd15: /* prid */
 		   begin
-		      t_cpr0_result = {33'd1, 1'b0, t_srcA[29:12], 12'd0};
+		      t_cpr0_result = {1'b1, 1'b0, t_srcA[29:12], 12'd0};
 		   end
 		 default:
 		   begin
 		      t_cpr0_result = t_srcA;	      
 		   end
 	       endcase
-	       if(int_uop.dst[4:0] == CPR0_STATUS)
-		 begin
-		    n_in_32b_mode = (t_srcA[5] == 1'b0);
-		    n_in_32fp_reg_mode = (t_srcA[26] == 1'b1);
-		 end
 	       t_alu_valid = 1'b1;
 	       t_pc = t_pc4;
 	    end // case: MTC0
@@ -2274,6 +2204,8 @@ module exec(clk,
 	t_mem_tail.is_store = 1'b0;
 	t_mem_tail.lwc1_lo = 1'b0;
 	t_mem_tail.in_storebuf = 1'b0;
+	t_mem_tail.is_uncached = 1'b0;
+	t_mem_tail.is_unmapped = 1'b0;
 	t_mem_tail.is_fp = 1'b0;
 	t_mem_tail.pc = mem_uq.pc;
 	t_mem_tail.uuid = r_cycle;
@@ -2580,6 +2512,8 @@ module exec(clk,
 		 end
 	    end
 	endcase // case (mem_uq.op)
+	t_mem_tail.is_uncached = is_uncached_va(t_mem_tail.addr[31:0]);
+	t_mem_tail.is_unmapped = is_unmapped_va(t_mem_tail.addr[31:0]);
 	t_pop_mem_uq = t_mem_uq_empty || t_flash_clear  ? 1'b0 : !t_mem_srcs_rdy ? 1'b0 : 1'b1;
      end // always_comb
 
@@ -2598,18 +2532,18 @@ module exec(clk,
 	  begin
 	     //$display("DS_DONE ALU writing to prf loc %d at cycle %d", uq.dst, r_cycle);
 	     
-	     r_int_prf[int_uop.dst] <= r_in_32b_mode ? {{HI_EBITS{1'b0}}, t_result[31:0]} : t_result;
+	     r_int_prf[int_uop.dst] <= t_result;
 	  end
 	else if(t_gpr_prf_ptr_val_out)
 	  begin
 	     //$display("multiplier writing to prf loc %d at cycle %d", t_gpr_prf_ptr_out, r_cycle);
-	     r_int_prf[t_gpr_prf_ptr_out] <= r_in_32b_mode ? {{HI_EBITS{1'b0}},t_mul_result[31:0]} : {{HI_EBITS{t_mul_result[31]}},t_mul_result[31:0]};
+	     r_int_prf[t_gpr_prf_ptr_out] <= t_mul_result[31:0];
 	  end
 	//2nd write port
 	if(mem_rsp_dst_valid)
 	  begin
 	     //$display("mem writing to prf loc %d at cycle %d with data %x", mem_rsp_dst_ptr, r_cycle, mem_rsp_load_data);
-	     r_int_prf[mem_rsp_dst_ptr] <= r_in_32b_mode ? {{HI_EBITS{1'b0}},mem_rsp_load_data[31:0]} : mem_rsp_load_data[`M_WIDTH-1:0];
+	     r_int_prf[mem_rsp_dst_ptr] <= mem_rsp_load_data[31:0];
 	  end
 	/* warning - terrible hack */
 	else if(t_got_syscall && r_start_int)
@@ -2761,7 +2695,7 @@ module exec(clk,
 	     complete_bundle_1.is_ii <= 1'b0;
 	     complete_bundle_1.take_br <= 1'b0;
 	     complete_bundle_1.take_trap <= 1'b0;
-	     complete_bundle_1.data <= t_mul_result[`M_WIDTH-1:0];
+	     complete_bundle_1.data <= t_mul_result;
 	  end
 	else
 	  begin
@@ -2772,7 +2706,7 @@ module exec(clk,
 	     complete_bundle_1.is_ii <= t_unimp_op;
 	     complete_bundle_1.take_br <= t_take_br;
 	     complete_bundle_1.take_trap <= 1'b0;
-	     complete_bundle_1.data <= r_in_32b_mode ? {{HI_EBITS{1'b0}}, t_result[31:0]} : t_result;
+	     complete_bundle_1.data <= {32'd0, t_result};
 	  end
 	//(uq.rob_ptr == 'd5) ? 1'b1 : 1'b0;
      end

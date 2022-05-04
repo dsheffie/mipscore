@@ -9,7 +9,7 @@
 // `define SINGLE_CYCLE_INT_DIVIDE 1
 `endif
 
-`define LG_M_WIDTH 6
+`define LG_M_WIDTH 5
 
 //`define BIG_ENDIAN 1
 
@@ -72,7 +72,7 @@
 `define LG_L1D_CL_LEN 4
 
 //number of sets in direct mapped cache
-`define LG_L1D_NUM_SETS 10
+`define LG_L1D_NUM_SETS 8
 
 `define LG_MEM_TAG_ENTRIES 2
 
@@ -108,40 +108,95 @@ typedef enum logic [4:0] {
    MEM_DEAD_LD = 5'd23,
    MEM_DEAD_ST = 5'd24,
    MEM_DEAD_SC = 5'd25,
-   MEM_NOP = 5'd26			  
+   MEM_LOAD_CL = 5'd26,
+   MEM_STORE_CL = 5'd27,			  
+   MEM_NOP = 5'd28			  
 } mem_op_t;
 
+typedef enum logic [5:0] {
+      CPR0_INDEX = 6'd0,
+      CPR0_RANDOM = 6'd1,
+      CPR0_ENTRYL0 = 6'd2,
+      CPR0_ENTRYL1 = 6'd3,
+      CPR0_CONTEXT = 6'd4,
+      CPR0_PAGEMASK = 6'd5,
+      CPR0_WIRED = 6'd6,
+      CPR0_BADVADDR = 6'd8,
+      CPR0_COUNT = 6'd9,
+      CPR0_ENTRYHI = 6'd10,
+      CPR0_COMPARE = 6'd11,
+      CPR0_STATUS = 6'd12,
+      CPR0_CAUSE = 6'd13,
+      CPR0_EPC = 6'd14,
+      CPR0_PRID = 6'd15,
+      CPR0_CONFIG = 6'd16,
+      CPR0_LLADDR = 6'd17,
+      CPR0_WATCHLO = 6'd18,
+      CPR0_WATCHHI = 6'd19,
+      CPR0_XCONTEXT = 6'd20,
+      CPR0_FRAMEMASK = 6'd21,
+      CPR0_BRDIAG = 6'd22,
+      CPR0_PC = 6'd25,
+      CPR0_ECC = 6'd26,
+      CPR0_CACHEERR = 6'd27,
+      CPR0_TAGLO = 6'd28,
+      CPR0_TAGHI = 6'd29,
+      CPR0_ERROREPC = 6'd30,
+      CPR0_INTCTL = 6'd32,
+      CPR0_EBASE = 6'd33,
+      CPR0_BOGUS = 6'd63			    
+} mips_cpr0_t;
 
 typedef enum logic [4:0] {
-      CPR0_INDEX = 5'd0,
-      CPR0_RANDOM = 5'd1,
-      CPR0_ENTRYL0 = 5'd2,
-      CPR0_ENTRYL1 = 5'd3,
-      CPR0_CONTEXT = 5'd4,
-      CPR0_PAGEMASK = 5'd5,
-      CPR0_WIRED = 5'd6,
-      CPR0_BADVADDR = 5'd8,
-      CPR0_COUNT = 5'd9,
-      CPR0_ENTRYHI = 5'd10,
-      CPR0_COMPARE = 5'd11,
-      CPR0_STATUS = 5'd12,
-      CPR0_CAUSE = 5'd13,
-      CPR0_EPC = 5'd14,
-      CPR0_PRID = 5'd15,
-      CPR0_CONFIG = 5'd16,
-      CPR0_LLADDR = 5'd17,
-      CPR0_WATCHLO = 5'd18,
-      CPR0_WATCHHI = 5'd19,
-      CPR0_XCONTEXT = 5'd20,
-      CPR0_FRAMEMASK = 5'd21,
-      CPR0_BRDIAG = 5'd22,
-      CPR0_PC = 5'd25,
-      CPR0_ECC = 5'd26,
-      CPR0_CACHEERR = 5'd27,
-      CPR0_TAGLO = 5'd28,
-      CPR0_TAGHI = 5'd29,
-      CPR0_ERROREPC = 5'd30
-} mips_cpr0_t;
+   SR_IE = 5'd0,
+   SR_EXL = 5'd1,
+   SR_ERL = 5'd2,
+   SR_SM = 5'd3,   			  
+   SR_UM = 5'd4,
+   SR_UX = 5'd5,
+   SR_SX = 5'd6,
+   SR_KX = 5'd7,
+   SR_IM0 = 5'd8,
+   SR_IM1 = 5'd9,
+   SR_IM2 = 5'd10,
+   SR_IM3 = 5'd11,
+   SR_IM4 = 5'd12,
+   SR_IM5 = 5'd13,
+   SR_IM6 = 5'd14,
+   SR_IM7 = 5'd15,			  
+   SR_NMI = 5'd19,
+   SR_SR  = 5'd20,
+   SR_TS  = 5'd21,
+   SR_BEV  = 5'd22,
+   SR_PX  = 5'd23,
+   SR_MX  = 5'd24,
+   SR_RE  = 5'd25,
+   SR_FR  = 5'd26,
+   SR_RP  = 5'd27,
+   SR_CU0 = 5'd28,
+   SR_CU1 = 5'd29,			  
+   SR_CU2 = 5'd30,			  
+   SR_CU3 = 5'd31			  			  
+ } mips_sr_t;
+
+function mips_cpr0_t decode_cpr0(logic [4:0] pri, logic [2:0] sel);
+   //MTC0 : reg 15 : srcB =  1, value 9d00176c
+   //MTC0 : reg 12 : srcB =  1, value 9d00176c
+   if(sel == 'd0)
+     return {1'b0, pri};
+   else if(sel == 'd1)
+     begin
+	if(pri == 'd12)
+	  return CPR0_INTCTL;
+	else if(pri == 'd15)
+	  return CPR0_EBASE;
+	else 
+	  return CPR0_BOGUS;
+     end
+   else
+     return CPR0_BOGUS;
+endfunction
+
 
 typedef enum logic [4:0] {
   EXCCODE_INT = 5'd0,
@@ -162,6 +217,44 @@ typedef enum logic [4:0] {
   EXCCODE_WATCH = 5'd23			   
 } mips_exccode_t;
 
+typedef enum logic [2:0] {
+  MIPS32_USEG = 3'b000,
+  MIPS32_KSEG0 = 3'b100, /* mapped cached */
+  MIPS32_KSEG1 = 3'b101, /* kernel umapped uncachable */
+  MIPS32_KSSEG = 3'b110, /* supervisor mapped, uncached */
+  MIPS32_KSEG3 = 3'b111  /* kernel mapped */
+} mips32_seg_t;
+ 	
+function mips32_seg_t va2seg(logic [31:0] va);
+   case(va[31:29])
+     3'b000:
+       return MIPS32_USEG;
+     3'b001:
+       return MIPS32_USEG;
+     3'b010:
+       return MIPS32_USEG;
+     3'b011:
+       return MIPS32_USEG;
+     3'b100:
+       return MIPS32_KSEG0;
+     3'b101:
+       return MIPS32_KSEG1;
+     3'b110:
+       return MIPS32_KSSEG;          
+     3'b111:
+       return MIPS32_KSEG3;
+   endcase // case (va[31:29])
+endfunction // va2seg
+
+function logic is_uncached_va(logic [31:0] va);
+   mips32_seg_t seg;
+   seg = va2seg(va);
+   return (seg == MIPS32_KSEG1) || (seg == MIPS32_KSSEG);
+endfunction
+
+function logic is_unmapped_va(logic [31:0] va);
+   return va2seg(va)==MIPS32_KSEG1;
+endfunction
 
 /* MIPS R10000 exception ordering 
 * Cold Reset (highest priority)

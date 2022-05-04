@@ -1,6 +1,6 @@
 UNAME_S = $(shell uname -s)
 
-OBJ = top.o verilated.o verilated_vcd_c.o loadelf.o interpret.o disassemble.o helper.o saveState.o sparse_mem.o interpret64.o linux_o32_syscall.o
+OBJ = top.o verilated.o verilated_vcd_c.o loadelf.o interpret.o disassemble.o helper.o saveState.o sparse_mem.o
 
 SV_SRC = core_l1d_l1i.sv core.sv exec.sv decode_mips32.sv ext_mask.sv shiftregbit.sv shift_right.sv mul.sv find_first_set.sv divider.sv l1d.sv l1i.sv machine.vh rob.vh uop.vh fpu.sv utlb.sv tlb.sv fp_mul.sv fp_add.sv ram1r1w.sv ram2r1w.sv popcount.sv count_leading_zeros.sv fp_trunc_to_int32.sv fp_div.sv unsigned_divider.sv fp_convert.sv fp_compare.sv fp_compare.vh
 
@@ -33,7 +33,7 @@ ifeq ($(UNAME_S),Darwin)
 	EXTRA_LD = -L/opt/local/lib -lboost_program_options-mt -lcapstone
 endif
 
-OPT = -O3 -g -std=c++11 #-fomit-frame-pointer
+OPT = -O3 -g -std=c++11 -fomit-frame-pointer
 CXXFLAGS = -std=c++11 -g  $(OPT) -I$(VERILATOR_INC) -I$(VERILATOR_DPI_INC) #-DLINUX_SYSCALL_EMULATION=1
 LIBS =  $(EXTRA_LD) -lpthread
 
@@ -46,7 +46,7 @@ EXE = ooo_core
 all: $(EXE)
 
 $(EXE) : $(OBJ) obj_dir/Vcore_l1d_l1i__ALL.a
-	$(CXX) $(CXXFLAGS) $(OBJ) obj_dir/*.o $(LIBS) -o $(EXE)
+	$(CXX) $(CXXFLAGS) $(OBJ) obj_dir/*.o $(LIBS) -o $(EXE) -g
 
 top.o: top.cc obj_dir/Vcore_l1d_l1i__ALL.a
 	$(CXX) -MMD $(CXXFLAGS) -Iobj_dir -c $< 

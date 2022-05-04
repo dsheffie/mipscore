@@ -1,3 +1,4 @@
+`include "machine.vh"
 `include "fp_compare.vh"
 
 `ifdef DEBUG_FPU
@@ -27,7 +28,7 @@ module fp_compare(clk, pc, a, b, start, cmp_type, y);
    parameter D = 4;
    
    input logic clk;
-   input logic [63:0] pc;
+   input logic [(`M_WIDTH-1):0] pc;
    
    input logic [W-1:0] a;
    input logic [W-1:0] b;

@@ -258,27 +258,6 @@ public:
 };
 
 
-class state64_t{
-public:
-  uint64_t pc = 0;
-  int64_t gpr[32] = {0};
-  int64_t lo = 0;
-  int64_t hi = 0;
-  uint32_t cpr0[32] = {0};
-  uint32_t cpr1[32] = {0};
-  uint32_t fcr1[5] = {0};
-  uint64_t icnt = 0;
-  uint8_t brk = 0;
-  uint64_t maxicnt = 0;
-  sparse_mem &mem;
-  image_info64 linux_image;
-  
-  state64_t(sparse_mem &mem) : mem(mem) {
-    memset(&linux_image, 0, sizeof(linux_image));
-  }
-  ~state64_t();
-};
-
 struct rtype_t {
   uint32_t opcode : 6;
   uint32_t sa : 5;
@@ -429,24 +408,85 @@ static inline uint32_t get_branch_target(uint32_t pc, uint32_t inst) {
 }
 
 void initState(state_t *s);
-void initState(state64_t *s);
 void execMips(state_t *s);
-void execMips(state64_t *s);
 
 void mkMonitorVectors(state_t *s);
-void mkMonitorVectors(state64_t *s);
 
 std::ostream &operator<<(std::ostream &out, const state_t & s);
-std::ostream &operator<<(std::ostream &out, const state64_t & s);
 
-struct new_utsname;
-
-int sys_uname(struct new_utsname *buf);
 
 bool is_store_insn(state_t *s);
 
 #define CPR0_SR 12
 
 #define VA2PA(x) ((x & 0x1fffffff))
+//#define VA2PA(x) (x)
+
+
+enum class mips32_seg_t {
+  mips32_useg,
+  mips32_kseg0,
+  mips32_kseg1,
+  mips32_ksseg,
+  mips32_kseg3
+};
+
+static inline std::ostream &operator<<(std::ostream &out, mips32_seg_t seg) {
+  switch(seg)
+    {
+    case mips32_seg_t::mips32_useg:
+      out << "useg";
+      break;
+    case mips32_seg_t::mips32_kseg0:
+      out << "kseg0";
+      break;
+    case mips32_seg_t::mips32_kseg1:
+      out << "kseg1";
+      break;
+    case mips32_seg_t::mips32_ksseg:
+      out << "ksseg";
+      break;      
+    case mips32_seg_t::mips32_kseg3:
+      out << "kseg3";
+      break;
+    default:
+      break;
+    }
+  return out;
+}
+
+static inline mips32_seg_t va2seg(uint32_t va) {
+  mips32_seg_t seg = mips32_seg_t::mips32_useg;
+  va = va >> 29;
+  switch(va & 7)
+    {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+      seg = mips32_seg_t::mips32_useg;
+      break;
+    case 4:
+      seg = mips32_seg_t::mips32_kseg0;
+      break;
+    case 5:
+      seg = mips32_seg_t::mips32_kseg1;
+      break;
+    case 6:
+      seg = mips32_seg_t::mips32_ksseg;
+      break;
+    case 7:
+      seg = mips32_seg_t::mips32_kseg3;
+      break;
+    }
+  return seg;
+}
+
+static inline bool is_uncached_va(uint32_t va) {
+  mips32_seg_t seg = va2seg(va);
+  return (seg == mips32_seg_t::mips32_kseg1) or
+    (seg == mips32_seg_t::mips32_ksseg);
+}
+
 
 #endif

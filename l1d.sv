@@ -270,6 +270,7 @@ endfunction
    
    logic [`M_WIDTH-1:0] 		  t_addr;
    logic 				  t_got_req, t_got_req2;
+   
    logic 				  t_got_miss;
    logic 				  t_push_miss;
    
@@ -314,7 +315,8 @@ endfunction
                              FLUSH_CL,
                              FLUSH_CL_WAIT,
                              RELOAD_UTLB,
-                             HANDLE_RELOAD
+			     HANDLE_RELOAD,
+                             HANDLE_UNCACHED
                              } state_t;
 
    
@@ -333,7 +335,9 @@ endfunction
    logic [63:0] 			 n_cache_accesses, r_cache_accesses;
    logic [63:0] 			 n_cache_hits, r_cache_hits;
    logic [63:0] 			 n_cache_hits_under_miss, r_cache_hits_under_miss;
-      
+   logic 				 r_disable_wr, n_disable_wr;
+   logic 				 n_block_mem, r_block_mem;
+   
    logic [63:0] 			 r_store_stalls, n_store_stalls;
    
    logic 				 t_utlb_hit;
@@ -343,7 +347,10 @@ endfunction
    
    logic [31:0] 			 r_cycle;
    assign flush_complete = r_flush_complete;
-   assign mem_req_addr = r_mem_req_addr;
+   assign mem_req_addr = {3'd0, r_mem_req_addr[28:0]};   
+   //assign mem_req_addr = r_mem_req_addr;
+
+   
    assign mem_req_store_data = r_mem_req_store_data;
    assign mem_req_opcode = r_mem_req_opcode;
    assign mem_req_valid = r_mem_req_valid;
@@ -408,9 +415,53 @@ endfunction
 	//$stop();
 	//if(memq_empty)
 	//begin
-	//   $display("memq_empty claimed but %d txns inflight", r_n_inflight);
+	//$display("memq_empty claimed but %d txns inflight", r_n_inflight);
 	// end
+	//if(!memq_empty)
+	//begin
+	//$display("mem_q_empty = %b, drain_ds_complete = %b, core_mem_req_valid = %b, r_n_inflight = %d, r_block_mem = %b, r_state = %d",
+	//mem_q_empty, drain_ds_complete,core_mem_req_valid,r_n_inflight,r_block_mem, r_state);
+	//end
 	
+	//$display("cycle %d : r_n_inflight = %d", r_cycle, r_n_inflight);
+	if(core_mem_req_valid /*&& core_mem_req_ack*/ && 1'b0)
+	   begin
+	      $display("cycle %d : req for address %x, uncached %b, pc = %x, head of rob %d, this op %d, should nuke %b, ack = %b", 
+		       r_cycle, 
+		       core_mem_req.addr[31:0], is_uncached_va(core_mem_req.addr[31:0]), core_mem_req.pc[31:0], head_of_rob_ptr, core_mem_req.rob_ptr,
+		       drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr],
+		       core_mem_req_ack);
+	      
+	      if(!core_mem_req_ack)
+		begin
+		   $display("cant ack at cycle %d, core_mem_req_valid = %b, r_state = %d", r_cycle, core_mem_req_valid, r_state);
+		   
+		   if(t_got_miss || mem_q_almost_full||mem_q_full || t_got_rd_retry)
+		     $display("t_got_miss = %b, mem_q_almost_full||mem_q_full = %b, t_got_rd_retry = %b",
+			      t_got_miss, (mem_q_almost_full||mem_q_full), t_got_rd_retry);
+		   
+		   if((r_last_wr2 && (r_cache_idx2 == core_mem_req.addr[IDX_STOP-1:IDX_START]) && !core_mem_req.is_store))
+		     $display("(r_last_wr2 && (r_cache_idx2 == core_mem_req.addr[IDX_STOP-1:IDX_START]) && !core_mem_req.is_store) = %b",
+			      (r_last_wr2 && (r_cache_idx2 == core_mem_req.addr[IDX_STOP-1:IDX_START]) && !core_mem_req.is_store));
+		   
+		   if(t_cm_block_stall)
+		     $display("t_cm_block_stall = %b", t_cm_block_stall);
+		   
+		   if(!((core_mem_req.is_uncached ? (core_mem_req.rob_ptr == head_of_rob_ptr)  || (drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr]) : 1'b1)))
+		     $display("(core_mem_req.is_uncached ? (core_mem_req.rob_ptr == head_of_rob_ptr)  || (drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr]) : 1'b1) = %b",
+		   	      (core_mem_req.is_uncached ? (core_mem_req.rob_ptr == head_of_rob_ptr)  || (drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr]) : 1'b1));
+		   
+		   if((r_graduated[core_mem_req.rob_ptr] != 2'b00))
+		     $display("(r_graduated[core_mem_req.rob_ptr] == 2'b00) = %b",
+			      (r_graduated[core_mem_req.rob_ptr] == 2'b00));
+
+		   if(r_block_mem)
+		     $display("r_block_mem = %b", r_block_mem);
+		   //r_block_mem);
+		end
+	   end
+
+
 	
 `ifdef VERBOSE_L1D
 	if(drain_ds_complete)
@@ -513,6 +564,7 @@ endfunction
 	else if(!(core_mem_req_valid && core_mem_req_ack) && core_mem_rsp_valid)
 	  begin
 	     r_n_inflight <= r_n_inflight - 'd1;
+	     if(r_n_inflight == 'd0) $stop();
 	  end
      end // always_ff@ (posedge clk)
    
@@ -634,7 +686,8 @@ endfunction
      begin
 	if(reset)
 	  begin
-
+	     r_disable_wr <= 1'b0;
+	     r_block_mem <= 1'b0;
 	     r_reload_issue <= 1'b0;
 	     r_did_reload <= 1'b0;
 	     
@@ -686,6 +739,8 @@ endfunction
 	  end
 	else
 	  begin
+	     r_disable_wr <= n_disable_wr;
+	     r_block_mem <= n_block_mem;
 	     r_reload_issue <= n_reload_issue;
 	     r_did_reload <= n_did_reload;
 	     r_stall_store <= n_stall_store;
@@ -765,7 +820,7 @@ endfunction
      begin
 	t_array_wr_addr = mem_rsp_valid ? r_mem_req_addr[IDX_STOP-1:IDX_START] : r_cache_idx;
 	t_array_wr_data = mem_rsp_valid ? mem_rsp_load_data : t_array_data;
-	t_array_wr_en = mem_rsp_valid || t_wr_array;
+	t_array_wr_en = (!r_disable_wr & mem_rsp_valid) || t_wr_array;
      end
 
 `ifdef VERBOSE_L1D
@@ -782,8 +837,17 @@ endfunction
      begin
    	if(mem_rsp_valid)
    	  begin
-   	     $display("cycle %d : CACHERELOAD from addr %x -> set %d data %x", 
-   		      r_cycle, r_mem_req_addr, r_mem_req_addr[IDX_STOP-1:IDX_START], t_array_wr_data);
+	     if(!r_disable_wr)
+	       begin
+   		  $display("cycle %d : CACHERELOAD from addr %x -> set %d data %x", 
+   			   r_cycle, r_mem_req_addr, r_mem_req_addr[IDX_STOP-1:IDX_START], 
+			   t_array_wr_data);
+	       end
+	     else
+	       begin
+		  $display("cycle %d : UNCACHEABLE COMPLETES for addr %x",
+			   r_cycle, r_mem_req_addr);
+	       end
    	  end
 
      end
@@ -796,7 +860,7 @@ endfunction
       .rd_addr1(t_cache_idx2),
       .wr_addr(r_mem_req_addr[IDX_STOP-1:IDX_START]),
       .wr_data(r_mem_req_addr[`M_WIDTH-1:IDX_STOP]),
-      .wr_en(mem_rsp_valid),
+      .wr_en(mem_rsp_valid && !r_disable_wr),
       .rd_data0(r_tag_out),
       .rd_data1(r_tag_out2)
       );
@@ -823,7 +887,7 @@ endfunction
 	t_dirty_value = 1'b0;
 	t_write_dirty_en = 1'b0;
 	t_dirty_wr_addr = r_cache_idx;
-	if(mem_rsp_valid)
+	if(mem_rsp_valid && !r_disable_wr)
 	  begin
 	     t_dirty_wr_addr = r_mem_req_addr[IDX_STOP-1:IDX_START];
 	     t_write_dirty_en = 1'b1;
@@ -861,7 +925,7 @@ endfunction
 	  begin
 	     t_write_valid_en = 1'b1;
 	  end
-	else if(mem_rsp_valid)
+	else if(mem_rsp_valid && !r_disable_wr)
 	  begin
 	     t_valid_wr_addr = r_mem_req_addr[IDX_STOP-1:IDX_START];
 	     t_valid_value = !r_inhibit_write;
@@ -1419,7 +1483,7 @@ endfunction
 	n_core_mem_rsp_valid = 1'b0;
 	
 	n_core_mem_rsp.op = r_req.op;
-	n_core_mem_rsp.data = r_req.addr;
+	n_core_mem_rsp.data = {32'd0, r_req.addr};
 	n_core_mem_rsp.rob_ptr = r_req.rob_ptr;
 	n_core_mem_rsp.dst_ptr = r_req.dst_ptr;
 	
@@ -1462,6 +1526,8 @@ endfunction
 	n_reload_issue = r_reload_issue;
 	n_did_reload = 1'b0;
 	n_lock_cache = r_lock_cache;
+	n_disable_wr = r_disable_wr;
+	n_block_mem = drain_ds_complete ? 1'b0 : r_block_mem;
 	
 	t_mh_block = r_got_req && r_last_wr && 
 		     (r_cache_idx == t_mem_head.addr[IDX_STOP-1:IDX_START] );
@@ -1479,7 +1545,7 @@ endfunction
 	       if(r_got_req2)
 		 begin
 		    n_core_mem_rsp.op = r_req2.op;
-		    n_core_mem_rsp.data = r_req2.addr;
+		    n_core_mem_rsp.data = {32'd0, r_req2.addr};
 		    n_core_mem_rsp.rob_ptr = r_req2.rob_ptr;
 		    n_core_mem_rsp.dst_ptr = r_req2.dst_ptr;
 		    n_core_mem_rsp.was_mem = !non_mem_op(r_req2.op);
@@ -1557,7 +1623,17 @@ endfunction
 
 	       if(r_got_req)
 		 begin
-		    if(r_valid_out && (r_tag_out == r_cache_tag))
+		    if(r_req.is_uncached)
+		      begin
+			 n_inhibit_write = 1'b1;
+			 n_state = HANDLE_UNCACHED;
+			 n_disable_wr = 1'b1;
+			 n_mem_req_addr = r_req.addr;
+			 n_mem_req_opcode = r_req.op;
+			 n_mem_req_store_data = {64'd0, r_req.data};
+			 n_mem_req_valid = 1'b1;
+		      end
+		    else if(r_valid_out && (r_tag_out == r_cache_tag))
 		      begin /* valid cacheline - hit in cache */
 			 
 `ifdef VERBOSE_L1D
@@ -1596,7 +1672,7 @@ endfunction
 			   begin
 			      n_reload_issue = 1'b1;
 			      n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-			      n_mem_req_opcode = MEM_SW;
+			      n_mem_req_opcode = MEM_STORE_CL;
 			      n_mem_req_store_data = t_data;
 			      n_inhibit_write = 1'b1;
 			      t_miss_idx = r_cache_idx;
@@ -1643,7 +1719,7 @@ endfunction
 			      begin
 				 n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
 			    n_lock_cache = 1'b1;
-			    n_mem_req_opcode = MEM_SW;
+			    n_mem_req_opcode = MEM_STORE_CL;
 			    n_state = WAIT_INJECT_RELOAD;
 			    n_mem_req_valid = 1'b0;
 			      end                                                             
@@ -1651,7 +1727,7 @@ endfunction
 			      begin
 				 n_lock_cache = 1'b0;
 				 n_mem_req_addr = {r_req.addr[`M_WIDTH-1:`LG_L1D_CL_LEN], {`LG_L1D_CL_LEN{1'b0}}};
-				 n_mem_req_opcode = MEM_LW;				 
+				 n_mem_req_opcode = MEM_LOAD_CL;
 				 n_state = INJECT_RELOAD;
 				 n_mem_req_valid = 1'b1;
 			      end
@@ -1664,7 +1740,7 @@ endfunction
 
 	       
 	     if(!mem_q_empty && !t_got_miss && !r_lock_cache)
-	       begin
+	       begin		  
 		  if(!t_mh_block)
 		    begin
 		       if(t_mem_head.is_store)
@@ -1750,7 +1826,9 @@ endfunction
 		  !t_got_rd_retry &&
 		  !(r_last_wr2 && (r_cache_idx2 == core_mem_req.addr[IDX_STOP-1:IDX_START]) && !core_mem_req.is_store) && 
 		  !t_cm_block_stall &&
-		  r_graduated[core_mem_req.rob_ptr] == 2'b00
+		  (core_mem_req.is_uncached ? (core_mem_req.rob_ptr == head_of_rob_ptr)  || (drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr]) : 1'b1) && 
+		  (r_graduated[core_mem_req.rob_ptr] == 2'b00) &&
+		  !r_block_mem
 		  )
 	       begin
 		  //use 2nd read port
@@ -1761,10 +1839,13 @@ endfunction
 		  core_mem_req_ack = 1'b1;
 		  t_got_req2 = 1'b1;
 
-		  //if(core_mem_req.op == MEM_LW && core_mem_req.addr[1:0] != 'd0)
+		  //if(core_mem_req.is_uncached && drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr])
 		  //begin
-		  //$display("unaligned load!!!! from pc %x", core_mem_req.pc);
-		  //end
+		  //$display("flush with uncached at cycle %d for entry %d", r_cycle, core_mem_req.rob_ptr);		       
+		  // end
+		  
+		  n_block_mem = core_mem_req.is_uncached && (core_mem_req.rob_ptr == head_of_rob_ptr) && 
+				!(drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr]);
 		  
 `ifdef VERBOSE_L1D		       
 		  $display("accepting new op %d, pc %x, addr %x for rob ptr %d at cycle %d, mem_q_empty %b, uuid %d", 
@@ -1796,6 +1877,23 @@ endfunction
 		    n_state = FLUSH_CL;
 		 end
 	    end // case: ACTIVE
+	  HANDLE_UNCACHED:
+	    begin
+	       if(mem_rsp_valid)
+		 begin
+		    n_block_mem = 1'b0;
+		    n_disable_wr = 1'b0;
+		    n_state = ACTIVE;
+		    n_core_mem_rsp.data = mem_rsp_load_data[63:0];
+		    n_core_mem_rsp_valid = !r_req.is_store;
+		    n_core_mem_rsp.dst_valid = r_req.dst_valid;
+		    n_core_mem_rsp.fp_dst_valid = r_req.fp_dst_valid;
+		    t_reset_graduated = r_req.is_store;
+		    //$display("wait for op %d from PA %x for pc %x, rob ptr %d, reset graduated %b", 
+		    //r_req.op, r_req.addr, r_req.pc, r_req.rob_ptr, t_reset_graduated);
+		    
+		 end
+	    end
 	  WAIT_INJECT_RELOAD:
 	    begin
 	       n_mem_req_valid = 1'b1;
@@ -1828,7 +1926,7 @@ endfunction
 	       if(r_dirty_out)
 		 begin
 		    n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-	       n_mem_req_opcode = MEM_SW;
+	       n_mem_req_opcode = MEM_STORE_CL;
 	       n_mem_req_store_data = t_data;
 	       n_state = FLUSH_CL_WAIT;
 	       n_inhibit_write = 1'b1;
@@ -1869,7 +1967,7 @@ endfunction
 		    else
 		      begin
 			 n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-	            n_mem_req_opcode = MEM_SW;
+	            n_mem_req_opcode = MEM_STORE_CL;
 	            n_mem_req_store_data = t_data;
 	            n_state = FLUSH_CACHE_WAIT;
 		    n_inhibit_write = 1'b1;
