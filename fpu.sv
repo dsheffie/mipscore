@@ -1,5 +1,6 @@
 `include "machine.vh"
 `include "fp_compare.vh"
+`include "uop.vh"
 
 module fpu(clk,
 	   reset,

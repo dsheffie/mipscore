@@ -12,6 +12,7 @@ import "DPI-C" function void record_fetch(int push1, int push2, int push3, int p
 
 module l1i(clk,
 	   reset,
+	   cpr0_status_reg,
 	   flush_req,
 	   flush_complete,
 	   restart_pc,
@@ -60,6 +61,7 @@ module l1i(clk,
 
    input logic clk;
    input logic reset;
+   input logic [31:0] cpr0_status_reg;
    input logic 	      flush_req;
    output logic       flush_complete;
    //restart signals
@@ -228,21 +230,23 @@ endfunction // is_nop
       
    
 function jump_t predecode(logic [31:0] insn);
-   jump_t j = NOT_CFLOW;
-   logic [5:0] 				 opcode = insn[31:26];
-   logic [4:0] 				 rt = insn[20:16];
-   logic [4:0] 				 rs = insn[25:21];
+   logic [5:0] 				 opcode;
+   logic [4:0] 				 rt, rs;
+
+   opcode = insn[31:26];
+   rt = insn[20:16];
+   rs = insn[25:21];
    
    case(opcode)
      6'd0: /* rtype */
        begin
 	  if(insn[5:0] == 6'd8) /* jr */
 	    begin
-	       j = (rs == 5'd31) ? IS_JR_R31 : IS_JR;
+	       return (rs == 5'd31) ? IS_JR_R31 : IS_JR;
 	    end
 	  else if(insn[5:0] == 6'd9)
 	    begin
-	       j = IS_JALR;
+	       return IS_JALR;
 	    end
        end
      6'd1:
@@ -250,52 +254,53 @@ function jump_t predecode(logic [31:0] insn);
 	  case(rt)
 	    'd0:
 	      begin
-		 j = IS_COND_BR;
+		return IS_COND_BR;
 	      end
 	    'd1:
 	      begin
-		 j = IS_COND_BR;
+		 return IS_COND_BR;
 	      end
 	    'd2:
 	      begin
-		 j = IS_L_COND_BR;
+		 return IS_L_COND_BR;
 	      end
 	    'd3:
 	      begin
-		 j = IS_L_COND_BR;
+		return IS_L_COND_BR;
 	      end
 	    'd17:
 	      begin
-		 j = IS_BR_AND_LINK;
+		 return IS_BR_AND_LINK;
 	      end
 	    default:
 	      begin
+		 return NOT_CFLOW;
 	      end
 	  endcase // case (rt)	  
        end
      6'd2:
        begin
-	  j = IS_J;
+	  return IS_J;
        end   
      6'd3:
        begin
-	  j = IS_JAL;
+	  return IS_JAL;
        end
      6'd4:
        begin
-	  j = ((rs == 'd0) && (rt == 'd0)) ? IS_BR : IS_COND_BR;
+	  return ((rs == 'd0) && (rt == 'd0)) ? IS_BR : IS_COND_BR;
        end
      6'd5:
        begin
-	  j = IS_COND_BR;
+	  return IS_COND_BR;
        end
      6'd6:
        begin
-	  j = IS_COND_BR;
+	  return IS_COND_BR;
        end
      6'd7:
        begin
-	  j = IS_COND_BR;
+	  return IS_COND_BR;
        end
      6'd17:
        begin
@@ -304,46 +309,45 @@ function jump_t predecode(logic [31:0] insn);
 	       case(insn[17:16])
 		 2'b00: //bc1f
 		   begin
-		      j = IS_COND_BR;
+		      return IS_COND_BR;
 		   end
 		 2'b01: //bc1t
 		   begin
-		      j = IS_COND_BR;
+		      return IS_COND_BR;
 		   end
 		 2'b10: //bc1fl;
 		   begin
-		      j = IS_L_COND_BR;
+		      return IS_L_COND_BR;
 		   end
 		 2'b11: //bc1tl
 		   begin
-		      j = IS_L_COND_BR;
+		     return IS_L_COND_BR;
 		   end	       
 	       endcase // case (insn[17:16])
 	    end // if (insn[25:21]==5'd8)
        end
      6'd20:
        begin
-	  j = IS_L_COND_BR;
+	  return IS_L_COND_BR;
        end
      6'd21:
        begin
-	  j = IS_L_COND_BR;
+	  return IS_L_COND_BR;
        end
      6'd22:
        begin
-	  j = IS_L_COND_BR;
+	  return IS_L_COND_BR;
        end
      6'd23:
        begin
-	  j = IS_L_COND_BR;
+	  return IS_L_COND_BR;
        end     
      default:
        begin
-	  j = NOT_CFLOW;
+	  return NOT_CFLOW;
        end
    endcase // case (opcode)   
-
-   return j;
+   return NOT_CFLOW;
 endfunction
    
    

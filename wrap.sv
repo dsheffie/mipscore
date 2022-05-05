@@ -139,7 +139,7 @@ module wrap(clk,
    generate
       genvar 			   i;
       for(i = 0; i < N_WORDS; i=i+1)
-	begin
+	begin : gen_buf_rd
 	   assign t_buf_rd[i] = r_buf[((i+1)*D_WIDTH)-1:i*D_WIDTH];
 	end
    endgenerate

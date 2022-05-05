@@ -1,6 +1,12 @@
 `include "uop.vh"
 
-module mul(clk,reset,opcode,go,
+module mul(clk,
+	   reset,
+	   go,
+	   unsigned_mul,
+	   is_mul,
+	   is_madd,
+	   is_msub,
 	   src_A,
 	   src_B,
 	   src_hilo,
@@ -16,8 +22,11 @@ module mul(clk,reset,opcode,go,
    
    input logic clk;
    input logic reset;
-   input opcode_t opcode;   
    input logic go;
+   input logic unsigned_mul;
+   input logic is_mul;
+   input logic is_madd;
+   input logic is_msub;
    
    input logic [31:0] src_A;
    input logic [31:0] src_B;
@@ -79,7 +88,7 @@ module mul(clk,reset,opcode,go,
    
    always_comb
      begin
-	if(opcode == MULTU)
+	if(unsigned_mul)
 	  begin
 	     t_mul = src_A * src_B;
 	  end
@@ -119,12 +128,12 @@ module mul(clk,reset,opcode,go,
 		  if(i == 0)
 		    begin
 		       r_mul[0] <= t_mul;
-		       r_do_madd[0] <= go & (opcode == MADD);
-		       r_do_msub[0] <= go & (opcode == MSUB);
+		       r_do_madd[0] <= go & is_madd;
+		       r_do_msub[0] <= go & is_msub;
 		       r_complete[0] <= go;
 		       r_rob_ptr[0] <= rob_ptr_in;
-		       r_gpr_val[0] <= go && (opcode == MUL);
-		       r_hilo_val[0] <= go && (opcode != MUL);
+		       r_gpr_val[0] <= go && is_mul;
+		       r_hilo_val[0] <= go && (!is_mul);
 		       r_gpr_ptr[0] <= gpr_prf_ptr_in;
 		       r_hilo_ptr[0] <= hilo_prf_ptr_in;
 		       r_madd[0] <= src_hilo;

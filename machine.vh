@@ -183,7 +183,39 @@ function mips_cpr0_t decode_cpr0(logic [4:0] pri, logic [2:0] sel);
    //MTC0 : reg 15 : srcB =  1, value 9d00176c
    //MTC0 : reg 12 : srcB =  1, value 9d00176c
    if(sel == 'd0)
-     return {1'b0, pri};
+     begin
+	case(pri)
+	  5'd0: return CPR0_INDEX;
+	  5'd1: return CPR0_RANDOM;
+	  5'd2: return CPR0_ENTRYL0;
+	  5'd3: return CPR0_ENTRYL1;
+	  5'd4: return CPR0_CONTEXT;
+	  5'd5: return CPR0_PAGEMASK;
+	  5'd6: return CPR0_WIRED;
+	  5'd8: return CPR0_BADVADDR;
+	  5'd9: return CPR0_COUNT;
+	  5'd10: return CPR0_ENTRYHI;
+	  5'd11: return CPR0_COMPARE;
+	  5'd12: return CPR0_STATUS;
+	  5'd13: return CPR0_CAUSE;
+	  5'd14: return CPR0_EPC;
+	  5'd15: return CPR0_PRID;
+	  5'd16: return CPR0_CONFIG;
+	  5'd17: return CPR0_LLADDR;
+	  5'd18: return CPR0_WATCHLO;
+	  5'd19: return CPR0_WATCHHI;
+	  5'd20: return CPR0_XCONTEXT;
+	  5'd21: return CPR0_FRAMEMASK;
+	  5'd22: return CPR0_BRDIAG;
+	  5'd25: return CPR0_PC;
+	  5'd26: return CPR0_ECC;	  
+	  5'd27: return CPR0_CACHEERR;
+	  5'd28: return CPR0_TAGLO;
+	  5'd29: return CPR0_TAGHI;	  
+	  5'd30: return CPR0_ERROREPC;
+	  default: return CPR0_BOGUS;	  
+	endcase
+     end
    else if(sel == 'd1)
      begin
 	if(pri == 'd12)

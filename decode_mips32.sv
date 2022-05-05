@@ -25,6 +25,9 @@ module decode_mips32(cpr0_status_reg,
    logic 	is_nop = (insn == 32'd0);
    logic 	is_ehb = (insn == 32'd192);
    
+   logic 	user_privilege = (cpr0_status_reg[SR_EXL] || cpr0_status_reg[SR_ERL]) ? 1'b0 : 
+		cpr0_status_reg[SR_UM:SR_SM] == 2'd2;
+      
    
    /* how many zero pad bits for reg specifiers */
    localparam ZP = (`LG_PRF_ENTRIES-5);

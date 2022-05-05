@@ -1,4 +1,5 @@
 `include "uop.vh"
+`include "rob.vh"
 
 `ifdef DEBUG_FPU
 import "DPI-C" function int fp64_to_fp32(input longint a);
@@ -895,8 +896,11 @@ module exec(clk,
   
    mul m(.clk(clk), 
 	 .reset(reset), 
-	 .opcode(int_uop.op), 
 	 .go(t_start_mul&r_start_int),
+	 .unsigned_mul(int_uop.op == MULTU),
+	 .is_mul(int_uop.op == MUL),
+	 .is_madd(int_uop.op == MADD),
+	 .is_msub(int_uop.op == MSUB),
 	 .src_A(t_srcA[31:0]),
 	 .src_B(t_srcB[31:0]),
 	 .src_hilo(t_src_hilo),

@@ -413,10 +413,14 @@ module core_l1d_l1i(clk,
    logic 			  drain_ds_complete;
    logic [(1<<`LG_ROB_ENTRIES)-1:0] dead_rob_mask;
    utlb_entry_t t_tlb_rsp;
+
+   logic [31:0] t_cpr0_status_reg;
+   
    
    l1d dcache (
 	       .clk(clk),
 	       .reset(reset),
+	       .cpr0_status_reg(t_cpr0_status_reg),
 	       .head_of_rob_ptr_valid(head_of_rob_ptr_valid),
 	       .head_of_rob_ptr(head_of_rob_ptr),
 	       .retired_rob_ptr_valid(retired_rob_ptr_valid),
@@ -462,6 +466,7 @@ module core_l1d_l1i(clk,
    l1i icache(
 	      .clk(clk),
 	      .reset(reset),
+	      .cpr0_status_reg(t_cpr0_status_reg),
 	      .flush_req(flush_req),
 	      .flush_complete(l1i_flush_complete),
 	      .restart_pc(restart_pc),
@@ -588,6 +593,7 @@ module core_l1d_l1i(clk,
 	     .monitor_rsp_valid(monitor_rsp_valid),
 	     .monitor_rsp_data_valid(monitor_rsp_data_valid),
 	     .monitor_rsp_data(monitor_rsp_data),
+	     .cpr0_status_reg(t_cpr0_status_reg),
 	     .got_break(got_break),
 	     .got_syscall(got_syscall),
 	     .got_ud(got_ud),

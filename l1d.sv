@@ -14,6 +14,7 @@ import "DPI-C" function void record_l1d(input int req,
 
 module l1d(clk, 
 	   reset,
+	   cpr0_status_reg,
 	   head_of_rob_ptr,
 	   head_of_rob_ptr_valid,
 	   retired_rob_ptr_valid,
@@ -62,6 +63,7 @@ module l1d(clk,
    
    input logic clk;
    input logic reset;
+   input logic [31:0] cpr0_status_reg;
    input logic [`LG_ROB_ENTRIES-1:0] head_of_rob_ptr;
    input logic 			     head_of_rob_ptr_valid;
    input logic retired_rob_ptr_valid;
