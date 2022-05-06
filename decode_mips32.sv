@@ -1314,10 +1314,13 @@ module decode_mips32(cpr0_status_reg,
 		      uop.srcA = rt;
 		      uop.srcA_valid = 1'b1;
 		      uop.srcB = rs;
-		      uop.srcB_valid = 1'b1;		      
+		      uop.srcB_valid = 1'b1;
+		      //save size in srcC
+		      uop.srcC = {1'b0, insn[15:11] } - {1'b0, insn[10:6]} + 6'd1;
 		      uop.dst = rt;
 		      uop.dst_valid = 1'b1;
-		      uop.imm = insn[15:0];
+		      //start pos
+		      uop.imm = {6'd0, insn[15:6]};
 		      uop.is_int = 1'b1;
 		   end
 		 6'd32:

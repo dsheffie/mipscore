@@ -694,7 +694,7 @@ module core(clk,
 `ifdef VERILATOR
    always_ff@(negedge clk)
      begin
-	if(print_rob)
+	if(print_rob && 1'b0)
 	  begin
 	     $display("cycle %d : state = %d, alu complete %b, mem complete %b,head_ptr %d, inflight %d, complete %b,  can_retire_rob_head %b, head pc %x, empty %b, full %b", 
 		      r_cycle,
@@ -1090,7 +1090,6 @@ module core(clk,
 	    begin
 	       //$display("cycle %d : r_rob_inflight = %b, r_ds_done = %b, t_rob_head_complete = %b, memq_empty = %b", 
 	       //r_cycle, r_rob_inflight, r_ds_done, t_rob_head_complete, memq_empty);
-	       //$display("inflight is_mem %b", r_rob['d5].is_mem);
 
 	       
 	       if(r_has_nullifying_delay_slot && t_rob_head_complete && !r_ds_done)

@@ -309,16 +309,17 @@ endfunction
    mem_req_t t_mem_tail, t_mem_head;
    logic 	mem_q_full, mem_q_empty, mem_q_almost_full;
    
-   typedef enum logic [3:0] {ACTIVE,
-                             INJECT_RELOAD,
-			     WAIT_INJECT_RELOAD,
-                             FLUSH_CACHE,
-                             FLUSH_CACHE_WAIT,
-                             FLUSH_CL,
-                             FLUSH_CL_WAIT,
-                             RELOAD_UTLB,
-			     HANDLE_RELOAD,
-                             HANDLE_UNCACHED
+   typedef enum logic [3:0] {ACTIVE, //0
+                             INJECT_RELOAD, //1
+			     WAIT_INJECT_RELOAD, //2
+                             FLUSH_CACHE, //3
+                             FLUSH_CACHE_WAIT, //4
+                             FLUSH_CL, //5
+                             FLUSH_CL_WAIT, //6
+                             RELOAD_UTLB, //7
+			     HANDLE_RELOAD, //8
+                             HANDLE_UNCACHED, //9
+			     HANDLE_NUKED_UNCACHED //10
                              } state_t;
 
    
@@ -339,6 +340,7 @@ endfunction
    logic [63:0] 			 n_cache_hits_under_miss, r_cache_hits_under_miss;
    logic 				 r_disable_wr, n_disable_wr;
    logic 				 n_block_mem, r_block_mem;
+   logic [`LG_ROB_ENTRIES-1:0] 		 n_block_rob_id, r_block_rob_id;
    
    logic [63:0] 			 r_store_stalls, n_store_stalls;
    
@@ -419,10 +421,11 @@ endfunction
 	//begin
 	//$display("memq_empty claimed but %d txns inflight", r_n_inflight);
 	// end
+	
 	//if(!memq_empty)
 	//begin
-	//$display("mem_q_empty = %b, drain_ds_complete = %b, core_mem_req_valid = %b, r_n_inflight = %d, r_block_mem = %b, r_state = %d",
-	//mem_q_empty, drain_ds_complete,core_mem_req_valid,r_n_inflight,r_block_mem, r_state);
+	//$display("cycle %d : mem_q_empty = %b, drain_ds_complete = %b, core_mem_req_valid = %b, r_n_inflight = %d, r_block_mem = %b, r_block_rob_id = %d, r_state = %d",
+	//r_cycle, mem_q_empty, drain_ds_complete,core_mem_req_valid,r_n_inflight,r_block_mem, r_block_rob_id, r_state);
 	//end
 	
 	//$display("cycle %d : r_n_inflight = %d", r_cycle, r_n_inflight);
@@ -690,6 +693,7 @@ endfunction
 	  begin
 	     r_disable_wr <= 1'b0;
 	     r_block_mem <= 1'b0;
+	     r_block_rob_id <= 'd0;
 	     r_reload_issue <= 1'b0;
 	     r_did_reload <= 1'b0;
 	     
@@ -743,6 +747,8 @@ endfunction
 	  begin
 	     r_disable_wr <= n_disable_wr;
 	     r_block_mem <= n_block_mem;
+	     r_block_rob_id <= n_block_rob_id;
+	     
 	     r_reload_issue <= n_reload_issue;
 	     r_did_reload <= n_did_reload;
 	     r_stall_store <= n_stall_store;
@@ -1443,7 +1449,21 @@ endfunction
      begin
 	r_fwd_cnt <= reset ? 'd0 : (r_got_req && r_must_forward ? r_fwd_cnt + 'd1 : r_fwd_cnt);
      end
-	         
+
+   always_ff@(negedge clk)
+     begin
+	if(r_got_req2 && (r_state != ACTIVE))
+	  begin
+	     $display("r_state = %d but r_got_req2 is asserted", r_state);
+	     $stop();
+	  end
+	if(!r_block_mem && n_block_mem && !t_got_req2)
+	  begin
+	     $display("r_state = %d, n_state = %d", r_state, n_state);
+	     $stop();
+	  end
+     end
+   
    always_comb
      begin
 	t_got_rd_retry = 1'b0;
@@ -1529,7 +1549,8 @@ endfunction
 	n_did_reload = 1'b0;
 	n_lock_cache = r_lock_cache;
 	n_disable_wr = r_disable_wr;
-	n_block_mem = drain_ds_complete ? 1'b0 : r_block_mem;
+	n_block_mem = r_block_mem;
+	n_block_rob_id = r_block_rob_id;
 	
 	t_mh_block = r_got_req && r_last_wr && 
 		     (r_cache_idx == t_mem_head.addr[IDX_STOP-1:IDX_START] );
@@ -1546,6 +1567,11 @@ endfunction
 	    begin
 	       if(r_got_req2)
 		 begin
+`ifdef VERBOSE_L1D
+		    $display("@@@@ req port 2 :  uuid %d, addr %x, pc %x, uncached %b, rob id %d, r_block_rob_id = %d", 
+			     r_req2.uuid, r_req2.addr, r_req2.pc, r_req2.is_uncached, r_req2.rob_ptr, r_block_rob_id);
+`endif
+		    
 		    n_core_mem_rsp.op = r_req2.op;
 		    n_core_mem_rsp.data = {32'd0, r_req2.addr};
 		    n_core_mem_rsp.rob_ptr = r_req2.rob_ptr;
@@ -1554,6 +1580,10 @@ endfunction
 		    n_core_mem_rsp.pc = r_req2.pc;
 		    if(drain_ds_complete)
 		      begin
+			 if(r_req2.is_uncached && (r_req2.rob_ptr == r_block_rob_id))
+			   begin
+			      n_block_mem = 1'b0;
+			   end
 			 n_core_mem_rsp.dst_valid = r_req2.dst_valid;
 			 n_core_mem_rsp.fp_dst_valid = r_req2.fp_dst_valid;
 			 n_core_mem_rsp_valid = 1'b1;
@@ -1625,15 +1655,18 @@ endfunction
 
 	       if(r_got_req)
 		 begin
+`ifdef VERBOSE_L1D
+		    $display("req port 1 :  uuid %d, addr %x, pc %x", r_req.uuid, r_req.addr, r_req.pc);
+`endif
 		    if(r_req.is_uncached)
 		      begin
 			 n_inhibit_write = 1'b1;
-			 n_state = HANDLE_UNCACHED;
+			 n_state = drain_ds_complete ? HANDLE_NUKED_UNCACHED : HANDLE_UNCACHED;
 			 n_disable_wr = 1'b1;
 			 n_mem_req_addr = r_req.addr;
 			 n_mem_req_opcode = r_req.op;
 			 n_mem_req_store_data = {64'd0, r_req.data};
-			 n_mem_req_valid = 1'b1;
+			 n_mem_req_valid = !drain_ds_complete;
 		      end
 		    else if(r_valid_out && (r_tag_out == r_cache_tag))
 		      begin /* valid cacheline - hit in cache */
@@ -1846,13 +1879,19 @@ endfunction
 		  //$display("flush with uncached at cycle %d for entry %d", r_cycle, core_mem_req.rob_ptr);		       
 		  // end
 		  
-		  n_block_mem = core_mem_req.is_uncached && (core_mem_req.rob_ptr == head_of_rob_ptr) && 
-				!(drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr]);
+		  n_block_mem = core_mem_req.is_uncached && (core_mem_req.rob_ptr == head_of_rob_ptr) /* && 
+				!(drain_ds_complete && dead_rob_mask[core_mem_req.rob_ptr])*/;
+
+		  if(n_block_mem)
+		    begin
+		       n_block_rob_id = core_mem_req.rob_ptr;
+		    end
 		  
 `ifdef VERBOSE_L1D		       
-		  $display("accepting new op %d, pc %x, addr %x for rob ptr %d at cycle %d, mem_q_empty %b, uuid %d", 
+		  $display("accepting new op %d, pc %x, addr %x for rob ptr %d at cycle %d, mem_q_empty %b, uuid %d, uncached %b", 
 			   core_mem_req.op, core_mem_req.pc, core_mem_req.addr,
-			   core_mem_req.rob_ptr, r_cycle, mem_q_empty, core_mem_req.uuid);
+			   core_mem_req.rob_ptr, r_cycle, mem_q_empty, core_mem_req.uuid,
+			   core_mem_req.is_uncached);
 `endif
 		  
 		  n_last_wr2 = core_mem_req.is_store;
@@ -1883,7 +1922,9 @@ endfunction
 	    begin
 	       if(mem_rsp_valid)
 		 begin
-		    n_block_mem = 1'b0;
+		    if(r_block_rob_id != r_req.rob_ptr) $stop();
+		    
+		    n_block_mem = !(r_block_rob_id == r_req.rob_ptr);
 		    n_disable_wr = 1'b0;
 		    n_state = ACTIVE;
 		    n_core_mem_rsp.data = mem_rsp_load_data[63:0];
@@ -1894,8 +1935,22 @@ endfunction
 		    //$display("wait for op %d from PA %x for pc %x, rob ptr %d, reset graduated %b", 
 		    //r_req.op, r_req.addr, r_req.pc, r_req.rob_ptr, t_reset_graduated);
 		    
-		 end
-	    end
+		 end // if (mem_rsp_valid)
+	    end // case: HANDLE_UNCACHED
+	  HANDLE_NUKED_UNCACHED:
+	    begin
+	       if(r_block_rob_id != r_req.rob_ptr) $stop();
+	       
+	       n_block_mem = !(r_block_rob_id == r_req.rob_ptr);
+	       
+	       n_disable_wr = 1'b0;
+	       n_state = ACTIVE;
+	       n_core_mem_rsp.data = mem_rsp_load_data[63:0];
+	       n_core_mem_rsp_valid = !r_req.is_store;
+	       n_core_mem_rsp.dst_valid = r_req.dst_valid;
+	       n_core_mem_rsp.fp_dst_valid = r_req.fp_dst_valid;
+	       t_reset_graduated = r_req.is_store;
+	    end	  
 	  WAIT_INJECT_RELOAD:
 	    begin
 	       n_mem_req_valid = 1'b1;

@@ -1167,6 +1167,56 @@ module exec(clk,
 		    );
      end
 
+   logic [31:0] t_ins_mask, t_ins_src_shift, t_ins_result;
+
+   assign t_ins_mask[0] = (6'd0 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[1] = (6'd1 <= {1'b0,int_uop.imm[9:5]}) && (6'd1 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[2] = (6'd2 <= {1'b0,int_uop.imm[9:5]}) && (6'd2 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[3] = (6'd3 <= {1'b0,int_uop.imm[9:5]}) && (6'd3 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[4] = (6'd4 <= {1'b0,int_uop.imm[9:5]}) && (6'd4 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[5] = (6'd5 <= {1'b0,int_uop.imm[9:5]}) && (6'd5 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[6] = (6'd6 <= {1'b0,int_uop.imm[9:5]}) && (6'd6 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[7] = (6'd7 <= {1'b0,int_uop.imm[9:5]}) && (6'd7 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[8] = (6'd8 <= {1'b0,int_uop.imm[9:5]}) && (6'd8 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[9] = (6'd9 <= {1'b0,int_uop.imm[9:5]}) && (6'd9 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[10] = (6'd10 <= {1'b0,int_uop.imm[9:5]}) && (6'd10 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[11] = (6'd11 <= {1'b0,int_uop.imm[9:5]}) && (6'd11 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[12] = (6'd12 <= {1'b0,int_uop.imm[9:5]}) && (6'd12 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[13] = (6'd13 <= {1'b0,int_uop.imm[9:5]}) && (6'd13 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[14] = (6'd14 <= {1'b0,int_uop.imm[9:5]}) && (6'd14 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[15] = (6'd15 <= {1'b0,int_uop.imm[9:5]}) && (6'd15 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[16] = (6'd16 <= {1'b0,int_uop.imm[9:5]}) && (6'd16 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[17] = (6'd17 <= {1'b0,int_uop.imm[9:5]}) && (6'd17 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[18] = (6'd18 <= {1'b0,int_uop.imm[9:5]}) && (6'd18 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[19] = (6'd19 <= {1'b0,int_uop.imm[9:5]}) && (6'd19 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[20] = (6'd20 <= {1'b0,int_uop.imm[9:5]}) && (6'd20 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[21] = (6'd21 <= {1'b0,int_uop.imm[9:5]}) && (6'd21 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[22] = (6'd22 <= {1'b0,int_uop.imm[9:5]}) && (6'd22 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[23] = (6'd23 <= {1'b0,int_uop.imm[9:5]}) && (6'd23 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[24] = (6'd24 <= {1'b0,int_uop.imm[9:5]}) && (6'd24 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[25] = (6'd25 <= {1'b0,int_uop.imm[9:5]}) && (6'd25 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[26] = (6'd26 <= {1'b0,int_uop.imm[9:5]}) && (6'd26 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[27] = (6'd27 <= {1'b0,int_uop.imm[9:5]}) && (6'd27 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[28] = (6'd28 <= {1'b0,int_uop.imm[9:5]}) && (6'd28 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[29] = (6'd29 <= {1'b0,int_uop.imm[9:5]}) && (6'd29 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[30] = (6'd30 <= {1'b0,int_uop.imm[9:5]}) && (6'd30 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[31] = (6'd31 >= {1'b0,int_uop.imm[4:0]});
+   
+   always_comb
+     begin
+	t_ins_src_shift = t_srcB << int_uop.imm[4:0];
+     end
+   generate
+      for(genvar i = 0; i < 32; i=i+1)
+	begin : ins_select
+	   assign t_ins_result[i] = t_ins_mask[i] ? t_ins_src_shift[i] : t_srcA[i];
+	end
+   endgenerate     
+     
+    
+ 
+   
+   
     always_ff@(negedge clk)
       begin
 	 if(int_uop.op == MTC0 && r_start_int)
@@ -1177,6 +1227,17 @@ module exec(clk,
 			    int_uop.dst, int_uop.srcB, t_srcA);
 		   //$stop();
 		end
+	   end
+	 if(int_uop.op == INS && r_start_int)
+	   begin
+	      $display("ins lsb = %d, msb = %d, size = %d, mask = %b",
+		       int_uop.imm[4:0],
+		       int_uop.imm[9:5],
+		       int_uop.srcC,
+		       t_ins_mask);
+	      $display("A=%b", t_srcA);
+	      $display("B=%b", t_srcB);
+	      $display("Y=%b", t_ins_result);
 	   end
 	 if(int_uop.op == PRINTCHAR && r_start_int)
 	   begin
@@ -1401,7 +1462,13 @@ module exec(clk,
 	    begin
 	       t_start_div32 = r_start_int&!ds_done;
 	    end
-`endif
+`endif // !`ifdef SINGLE_CYCLE_INT_DIVIDE
+	  INS:
+	    begin
+	       t_result = t_ins_result;
+	       t_alu_valid = 1'b1;
+	       t_wr_int_prf = 1'b1;
+	    end
 	  EXT:
 	    begin
 	       t_signed_shift = 1'b0;
