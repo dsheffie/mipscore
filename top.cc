@@ -662,23 +662,24 @@ int main(int argc, char **argv) {
 
 
 
-	
-	if(tb->mem_req_opcode == MEM_SW) {
+	if(tb->mem_req_opcode == MEM_SB) {
+	  s->mem.set<uint8_t>(ea, tb->mem_req_store_data[0]);
+	}
+	else if(tb->mem_req_opcode == MEM_SW) {
 	  //std::cout << "uncached sw of data " << std::hex <<
 	  //tb->mem_req_store_data[0] << " to address " <<
 	  //ea << "\n";
 	  s->mem.set<uint32_t>(ea, tb->mem_req_store_data[0]);
 	}
+	else if(tb->mem_req_opcode == MEM_LBU) {
+	  tb->mem_rsp_load_data[0] = s->mem.get<uint8_t>(ea);
+	}
 	else if(tb->mem_req_opcode == MEM_LW) {
-	  //if(ea == PIC32_DEVID) {
-	  //std::cout << "trying to read device id\n";
-	  //}
 	  tb->mem_rsp_load_data[0] = s->mem.get<uint32_t>(ea);
-	  //std::cout << "uncached lw of data " << std::hex <<
-	  //tb->mem_rsp_load_data[0] << " to address " <<
-	  //ea << "\n";
 	}
 	else  {
+	  std::cout << "aborting due to unsupported uncached op : "
+		    << static_cast<int>(tb->mem_req_opcode) << "\n";
 	  abort();
 	}
       }

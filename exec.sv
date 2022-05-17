@@ -117,6 +117,8 @@ module exec(clk,
    localparam N_UQ_ENTRIES = (1<<`LG_UQ_ENTRIES);
    localparam N_MEM_UQ_ENTRIES = (1<<`LG_MEM_UQ_ENTRIES);
    localparam N_FP_UQ_ENTRIES = (1<<`LG_FP_UQ_ENTRIES);
+
+   localparam N_TLB_ENTRIES = (1<<`LG_TLB_ENTRIES);
       
    logic [(`M_WIDTH-1):0] r_int_prf [N_INT_PRF_ENTRIES-1:0];
    logic [63:0] r_fp_prf [N_FP_PRF_ENTRIES-1:0];
@@ -124,7 +126,8 @@ module exec(clk,
    logic [7:0] 	r_fcr_prf[N_FCR_PRF_ENTRIES-1:0];
    logic [(`M_WIDTH-1):0] r_cpr0 [63:0];
    
-   localparam FP_ZP = (`LG_PRF_ENTRIES-5);
+   logic [31:0] 	  t_ins_mask, t_ins_src_shift, t_ins_result;
+   
    localparam Z_BITS = 64-`M_WIDTH;      
    
    logic [N_INT_PRF_ENTRIES-1:0]  r_prf_inflight, n_prf_inflight;
@@ -636,7 +639,6 @@ module exec(clk,
 	t_fp_srcC = r_fp_prf[fp_uq.srcC];
 `endif
 	//non-renamed
-	t_cpr0_srcA = r_cpr0[int_uop.srcA[5:0]];
      end // always_comb
 
 
@@ -1167,8 +1169,6 @@ module exec(clk,
 		    );
      end
 
-   logic [31:0] t_ins_mask, t_ins_src_shift, t_ins_result;
-
    assign t_ins_mask[0] = (6'd0 >= {1'b0,int_uop.imm[4:0]});
    assign t_ins_mask[1] = (6'd1 <= {1'b0,int_uop.imm[9:5]}) && (6'd1 >= {1'b0,int_uop.imm[4:0]});
    assign t_ins_mask[2] = (6'd2 <= {1'b0,int_uop.imm[9:5]}) && (6'd2 >= {1'b0,int_uop.imm[4:0]});
@@ -1200,7 +1200,7 @@ module exec(clk,
    assign t_ins_mask[28] = (6'd28 <= {1'b0,int_uop.imm[9:5]}) && (6'd28 >= {1'b0,int_uop.imm[4:0]});
    assign t_ins_mask[29] = (6'd29 <= {1'b0,int_uop.imm[9:5]}) && (6'd29 >= {1'b0,int_uop.imm[4:0]});
    assign t_ins_mask[30] = (6'd30 <= {1'b0,int_uop.imm[9:5]}) && (6'd30 >= {1'b0,int_uop.imm[4:0]});
-   assign t_ins_mask[31] = (6'd31 >= {1'b0,int_uop.imm[4:0]});
+   assign t_ins_mask[31] = (6'd31 == {1'b0,int_uop.imm[4:0]});
    
    always_comb
      begin
@@ -1219,26 +1219,47 @@ module exec(clk,
    
     always_ff@(negedge clk)
       begin
-	 if(int_uop.op == MTC0 && r_start_int)
+	 if(int_uop.op == MTC0 && r_start_int && 1'b0)
+	 begin
+	    $display("MTC0 : reg %d : srcB = %d, value %x, cycle %d", 
+		     int_uop.dst, int_uop.srcB, t_srcA, r_cycle);
+	 end
+	 if(int_uop.op == TLBWI && r_start_int)
 	   begin
-	      if(int_uop.srcB != 'd0)
-		begin
-		   $display("MTC0 : reg %d : srcB = %d, value %x", 
-			    int_uop.dst, int_uop.srcB, t_srcA);
-		   //$stop();
-		end
+	      $display("writing to TLB entry %d", r_cpr0_index);
+	      $display("entrylo0 %x", r_cpr0_entrylo0);
+	      $display("entrylo1 %x", r_cpr0_entrylo1);
+	      $display("entryhi  %x", r_cpr0_entryhi);
+	      $display("va range %x", 
+		       {r_cpr0_entryhi[31:13], 13'd0});
+	      $display("pa0 %x, v %b g %b d %b, c %b",
+		       {r_cpr0_entrylo0[31:6], 6'd0}, 
+		       r_cpr0_entrylo0[1],
+		       r_cpr0_entrylo0[0],
+		       r_cpr0_entrylo0[2],
+		       r_cpr0_entrylo0[5:3]);
+	      $display("pa1 %x, v %b",
+		       {r_cpr0_entrylo1[31:6], 6'd0}, r_cpr0_entrylo1[1]);	      
+	      
+	      $stop();
 	   end
-	 if(int_uop.op == INS && r_start_int)
-	   begin
-	      $display("ins lsb = %d, msb = %d, size = %d, mask = %b",
-		       int_uop.imm[4:0],
-		       int_uop.imm[9:5],
-		       int_uop.srcC,
-		       t_ins_mask);
-	      $display("A=%b", t_srcA);
-	      $display("B=%b", t_srcB);
-	      $display("Y=%b", t_ins_result);
-	   end
+	// if(int_uop.op == MFC0 && r_start_int)
+	 //begin
+	 //$display("MFC0 : cpr0 reg %d : value %x, cycle %d", 
+	 //int_uop.srcA, t_cpr0_srcA, r_cycle);
+	 //end
+	 
+	 // if(int_uop.op == INS && r_start_int)
+	 //   begin
+	 //      $display("ins lsb = %d, msb = %d, size = %d, mask = %b",
+	 // 	       int_uop.imm[4:0],
+	 // 	       int_uop.imm[9:5],
+	 // 	       int_uop.srcC,
+	 // 	       t_ins_mask);
+	 //      $display("A=%b", t_srcA);
+	 //      $display("B=%b", t_srcB);
+	 //      $display("Y=%b", t_ins_result);
+	 //   end
 	 if(int_uop.op == PRINTCHAR && r_start_int)
 	   begin
 	      put_char(t_srcB[7:0]);
@@ -1754,6 +1775,11 @@ module exec(clk,
 	       t_wr_cpr0 = 1'b1;
 	       t_dst_cpr0 = CPR0_STATUS;
 	       t_cpr0_result = {t_cpr0_srcA[(`M_WIDTH-1):1], 1'b1};
+	    end
+	  TLBWI:
+	    begin
+	       t_pc = t_pc4;
+	       t_alu_valid = 1'b1;
 	    end
 	  ERET:
 	    begin
@@ -2652,7 +2678,8 @@ module exec(clk,
      begin
 	if(reset)
 	  begin
-	     cpr0_status_reg <= 'd0;
+	     //EXL set, BEV set, IE disabled
+	     cpr0_status_reg <= 32'h400002;
 	  end
 	else
 	  begin
@@ -2664,10 +2691,141 @@ module exec(clk,
      end
 
    logic [31:0] r_cpr0_count_reg, r_cpr0_compare_reg;
+   logic [`LG_TLB_ENTRIES-1:0] r_cpr0_index, n_cpr0_index;
+   logic [`LG_TLB_ENTRIES-1:0] r_cpr0_wired, n_cpr0_wired;
+   logic [`LG_TLB_ENTRIES-1:0] r_cpr0_random, n_cpr0_random;
+   logic [(`M_WIDTH-1):0]      r_cpr0_entryhi, n_cpr0_entryhi;
+   logic [(`M_WIDTH-1):0]      r_cpr0_entrylo0, n_cpr0_entrylo0;
+   logic [(`M_WIDTH-1):0]      r_cpr0_entrylo1, n_cpr0_entrylo1;
+   
+   localparam T_PAD = `M_WIDTH - `LG_TLB_ENTRIES;
+   
+
+   always_comb
+     begin
+	t_cpr0_srcA = r_cpr0[int_uop.srcA[5:0]];	
+	case(int_uop.srcA[5:0])
+	  CPR0_INDEX:
+	    begin
+	       t_cpr0_srcA = {{T_PAD{1'b0}}, r_cpr0_index};
+	    end
+	  CPR0_ENTRYLO0:
+	    begin
+	       t_cpr0_srcA = r_cpr0_entrylo0;
+	    end
+	  CPR0_ENTRYLO1:
+	    begin
+	       t_cpr0_srcA = r_cpr0_entrylo1;
+	    end
+	  CPR0_RANDOM:
+	    begin
+	       t_cpr0_srcA = {{T_PAD{1'b0}}, r_cpr0_random};
+	    end
+	  CPR0_WIRED:
+	    begin
+	       t_cpr0_srcA = {{T_PAD{1'b0}}, r_cpr0_wired};
+	    end
+	  CPR0_ENTRYHI:
+	    begin
+	       t_cpr0_srcA = r_cpr0_entryhi;
+	    end
+	  default:	  
+	    begin
+	       t_cpr0_srcA = r_cpr0[int_uop.srcA[5:0]];	       
+	    end
+	endcase
+     end
+   
+   always_ff@(posedge clk)
+     begin
+	if(reset)
+	  begin
+	     r_cpr0_index <= 'd0;
+	     r_cpr0_random <= N_TLB_ENTRIES-1;
+	     r_cpr0_wired <= 'd0;
+	     r_cpr0_entryhi <= 'd0;
+	     r_cpr0_entrylo0 <= 'd0;
+	     r_cpr0_entrylo1 <= 'd0;
+	  end
+	else
+	  begin
+	     r_cpr0_index <= n_cpr0_index;
+	     r_cpr0_random <= n_cpr0_random;
+	     r_cpr0_wired <= n_cpr0_wired;
+	     r_cpr0_entryhi <= n_cpr0_entryhi;
+	     r_cpr0_entrylo0 <= n_cpr0_entrylo0;
+	     r_cpr0_entrylo1 <= n_cpr0_entrylo1;
+	  end
+     end
+   
    always_comb
      begin
 	cpr0_timer_irq = (r_cpr0_count_reg == r_cpr0_compare_reg);
-     end
+	//random
+	if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_RANDOM))
+	  begin
+	     n_cpr0_random = t_cpr0_result[`LG_TLB_ENTRIES-1:0];
+	  end
+	else if(r_cpr0_random == r_cpr0_wired || 
+		(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_WIRED)))
+	  begin
+	     n_cpr0_random = (N_TLB_ENTRIES-1);
+	  end
+	else
+	  begin
+	     n_cpr0_random = r_cpr0_random - 'd1;
+	  end
+	       
+	//index
+	if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_INDEX))
+	  begin
+	     n_cpr0_index = t_cpr0_result[`LG_TLB_ENTRIES-1:0];
+	  end
+	else
+	  begin
+	     n_cpr0_index = r_cpr0_index;
+	  end
+
+	//wired
+	if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_WIRED))
+	  begin
+	     n_cpr0_wired = t_cpr0_result[`LG_TLB_ENTRIES-1:0];
+	  end
+	else
+	  begin
+	     n_cpr0_wired = r_cpr0_wired;
+	  end
+	
+	if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_ENTRYHI))
+	  begin
+	     n_cpr0_entryhi = t_cpr0_result;
+	  end
+	else
+	  begin
+	     n_cpr0_entryhi = r_cpr0_entryhi;
+	  end
+
+	if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_ENTRYLO0))
+	  begin
+	     n_cpr0_entrylo0 = t_cpr0_result;
+	  end
+	else
+	  begin
+	     n_cpr0_entrylo0 = r_cpr0_entrylo0;
+	  end
+
+	if(r_start_int && t_wr_cpr0 && (t_dst_cpr0==CPR0_ENTRYLO1))
+	  begin
+	     n_cpr0_entrylo1 = t_cpr0_result;
+	  end
+	else
+	  begin
+	     n_cpr0_entrylo1 = r_cpr0_entrylo1;
+	  end
+	
+
+	
+     end // always_comb
    
    always_ff@(posedge clk)
      begin

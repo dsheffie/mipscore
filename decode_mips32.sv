@@ -678,6 +678,27 @@ module decode_mips32(cpr0_status_reg,
 		    uop.serializing_op = 1'b1;
 		    uop.must_restart = 1'b1;		    
 		 end
+	       else if(insn[25] && (insn[5:0] == 6'd2))
+		 begin
+		    uop.op = TLBWI;
+		    uop.is_int = 1'b1;
+		    uop.serializing_op = 1'b1;
+		    uop.must_restart = 1'b1;		    
+		 end
+	       else if(insn[25] && (insn[5:0] == 6'd6))
+		 begin
+		    uop.op = TLBWR;
+		    uop.is_int = 1'b1;
+		    uop.serializing_op = 1'b1;
+		    uop.must_restart = 1'b1;		    
+		 end
+	       else if(insn[25] && (insn[5:0] == 6'd8))
+		 begin
+		    uop.op = TLBP;
+		    uop.is_int = 1'b1;
+		    uop.serializing_op = 1'b1;
+		    uop.must_restart = 1'b1;		    
+		 end
 	       else if((insn[25:21] == 5'b01011) && (insn[15:0] == 16'b0110000000000000))
 		 begin
 		    uop.op = DI;

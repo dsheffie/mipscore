@@ -22,6 +22,7 @@
 `define LG_PG_SZ 12
 
 `define LG_UTLB_ENTRIES 3
+`define LG_TLB_ENTRIES 5
 
 `define LG_PRF_ENTRIES 6
 
@@ -116,8 +117,8 @@ typedef enum logic [4:0] {
 typedef enum logic [5:0] {
       CPR0_INDEX = 6'd0,
       CPR0_RANDOM = 6'd1,
-      CPR0_ENTRYL0 = 6'd2,
-      CPR0_ENTRYL1 = 6'd3,
+      CPR0_ENTRYLO0 = 6'd2,
+      CPR0_ENTRYLO1 = 6'd3,
       CPR0_CONTEXT = 6'd4,
       CPR0_PAGEMASK = 6'd5,
       CPR0_WIRED = 6'd6,
@@ -187,8 +188,8 @@ function mips_cpr0_t decode_cpr0(logic [4:0] pri, logic [2:0] sel);
 	case(pri)
 	  5'd0: return CPR0_INDEX;
 	  5'd1: return CPR0_RANDOM;
-	  5'd2: return CPR0_ENTRYL0;
-	  5'd3: return CPR0_ENTRYL1;
+	  5'd2: return CPR0_ENTRYLO0;
+	  5'd3: return CPR0_ENTRYLO1;
 	  5'd4: return CPR0_CONTEXT;
 	  5'd5: return CPR0_PAGEMASK;
 	  5'd6: return CPR0_WIRED;

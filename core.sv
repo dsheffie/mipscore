@@ -694,7 +694,7 @@ module core(clk,
 `ifdef VERILATOR
    always_ff@(negedge clk)
      begin
-	if(print_rob && 1'b0)
+	if(print_rob)
 	  begin
 	     $display("cycle %d : state = %d, alu complete %b, mem complete %b,head_ptr %d, inflight %d, complete %b,  can_retire_rob_head %b, head pc %x, empty %b, full %b", 
 		      r_cycle,
@@ -751,6 +751,52 @@ module core(clk,
 	       end
 	  end // else: !if(reset)
      end // always_ff@ (posedge clk)
+
+   logic [(`M_WIDTH-1):0] n_last_target_pc, r_last_target_pc;
+   logic [(`M_WIDTH-1):0] n_last_src_pc, r_last_src_pc;
+   logic 		  n_last_src_is_indirect, r_last_src_is_indirect;
+   logic 		  r_last_take_br, n_last_take_br;
+   
+   always_comb
+     begin
+	n_last_src_pc = r_last_src_pc;
+	n_last_target_pc = r_last_target_pc;
+	n_last_src_is_indirect = r_last_src_is_indirect;
+	n_last_take_br = r_last_take_br;
+	
+	if(t_retire && !t_retire_two)
+	  begin
+	     n_last_src_pc = t_rob_head.pc;
+	     n_last_target_pc = t_rob_head.target_pc;
+	     n_last_src_is_indirect = t_rob_head.is_indirect && !t_rob_head.is_ret;
+	     n_last_take_br = t_rob_head.take_br;
+	  end
+	else if(t_retire_two)
+	  begin
+	     n_last_src_pc = t_rob_next_head.pc;
+	     n_last_target_pc = t_rob_next_head.target_pc;
+	     n_last_src_is_indirect = t_rob_next_head.is_indirect && !t_rob_next_head.is_ret;
+	     n_last_take_br = t_rob_next_head.take_br;
+	  end
+     end
+
+   always_ff@(posedge clk)
+     begin
+	if(reset)
+	  begin
+	     r_last_src_pc <= 'd0;
+	     r_last_target_pc <= 'd0;
+	     r_last_src_is_indirect <= 1'b0;
+	     r_last_take_br <= 1'b0;
+	  end
+	else
+	  begin
+	     r_last_src_pc <= n_last_src_pc;
+	     r_last_target_pc <= n_last_target_pc;
+	     r_last_src_is_indirect <= n_last_src_is_indirect;
+	     r_last_take_br <= n_last_take_br;
+	  end
+     end
 
    
    always_comb
@@ -849,9 +895,12 @@ module core(clk,
 	       if(t_cpr0_status_reg[SR_IE] &&
 		  !t_cpr0_status_reg[SR_EXL] &&
 		  r_pending_irq && 
-		  !t_rob_empty 
+		  !t_rob_empty
+		  && !t_rob_head.is_store
+		  && !t_rob_head.has_delay_slot
 		  && !t_rob_head.in_delay_slot)
 		 begin
+		    //$display("TAKING IRQ at cycle %d", r_cycle);
 		    n_state = IRQ_WRITE_EPC;
 		    n_cause = EXCCODE_INT;
 		    n_restart_pc = 32'h9d000180;
@@ -1171,12 +1220,29 @@ module core(clk,
 	       if(t_rob_head_complete)
 		 begin
 		    t_clr_dq = 1'b1;
-		    n_restart_pc = t_rob_head.target_pc;
-		    n_restart_src_pc = t_rob_head.pc;
-		    n_restart_src_is_indirect = 1'b0;
+		    
+		    n_restart_pc =  t_rob_head.in_delay_slot & r_last_take_br ? r_last_target_pc :
+				    t_rob_head.target_pc;
+		    
+		    n_restart_src_pc =  t_rob_head.in_delay_slot & r_last_take_br ? r_last_src_pc : 
+					t_rob_head.pc;
+		    
+		    n_restart_src_is_indirect = t_rob_head.in_delay_slot & r_last_take_br & r_last_src_is_indirect;
+		    
+		    
 		    n_restart_valid = 1'b1;
-		    //$display("done with serialize for src pc %x -> %x", 
-		    //n_restart_src_pc, n_restart_pc);
+		    
+		    //$display("done with serialize for src pc %x -> %x, in delay slot %b, last src %x, last target pc %x", 
+		    //n_restart_src_pc, 
+		    //n_restart_pc, 
+		    //t_rob_head.in_delay_slot,
+		    //r_last_src_pc, 
+		    //r_last_target_pc);
+
+		    //if(t_rob_head.in_delay_slot)
+		    //$stop();
+		    
+		    
 		    if(n_got_restart_ack)
 		      begin
 			 t_retire = 1'b1;			 
@@ -1334,6 +1400,8 @@ module core(clk,
 	
 	else if(t_clr_dq || t_clr_rob)
 	  begin
+	     //$display("clearing in n_delay_slot at cycle %d, t_clr_dq = %b, t_clr_rob %b",
+	     //r_cycle,t_clr_dq,t_clr_rob);
 	     n_in_delay_slot = 1'b0;
 	  end
 	
@@ -1342,6 +1410,15 @@ module core(clk,
 
    always_ff@(negedge clk)
      begin
+	//if(t_alloc && t_uop.op == JR)
+	//begin
+	//$display("JR alloc at cycle %d", r_cycle);
+	//end
+	// if(t_alloc && t_uop.pc == 32'h9d06bd14)
+	//   begin
+	//      $display("alloc in mtc in delay slot, r_in_delay_slot = %b, cycle %d", 
+	// 	      r_in_delay_slot, r_cycle);
+	//   end
 	//if(t_rob_tail.in_delay_slot && t_uop.serializing_op)
 	//begin
 	//$display("WARN : op at pc %x is serializing in the delay slot", 
@@ -1747,7 +1824,7 @@ module core(clk,
 	t_rob_next_tail.take_br = 1'b0;
 	t_rob_next_tail.is_br = t_alloc_uop2.is_br;	
 	t_rob_next_tail.is_indirect = t_alloc_uop2.op == JALR || t_alloc_uop2.op == JR;	
-	t_rob_next_tail.in_delay_slot = 1'b0;
+	t_rob_next_tail.in_delay_slot = t_uop.has_delay_slot;
 	t_rob_next_tail.data = 64'd0;
 	t_rob_next_tail.pht_idx = t_alloc_uop2.pht_idx;	
 	t_rob_next_tail.has_delay_slot = 1'b0;
@@ -1829,7 +1906,7 @@ module core(clk,
 	     t_rob_next_tail.complete_cycle = 'd0;
 `endif
 	     //t_uop.has_delay_slot
-	     t_rob_next_tail.in_delay_slot = t_uop.has_delay_slot;
+
 
 	     if(t_uop2.dst_valid)
 	       begin
