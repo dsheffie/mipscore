@@ -681,8 +681,10 @@ module exec(clk,
    find_first_set#(LG_INT_SCHED_ENTRIES) ffs_int_sched_alloc( .in(~r_alu_sched_valid),
 							      .y(t_alu_sched_alloc_ptr));
 
-   find_first_set#(LG_INT_SCHED_ENTRIES) ffs_int_sched_select( .in(t_alu_entry_rdy),
-							       .y(t_alu_sched_select_ptr));
+   fair_sched#(LG_INT_SCHED_ENTRIES) ffs_int_sched_select( .clk(clk),
+							   .rst(reset),
+							   .in(t_alu_entry_rdy),
+							   .y(t_alu_sched_select_ptr));
 
    
    always_comb
