@@ -804,7 +804,11 @@ module exec(clk,
 		//is_mult(r_alu_sched_uops[i].op);
 		
 		t_alu_entry_rdy[i] = r_alu_sched_valid[i] &&
-				     (is_div(r_alu_sched_uops[i].op) ?  t_div_ready :  (is_mult(r_alu_sched_uops[i].op) ?  !r_wb_bitvec[`MUL_LAT+1] : !r_wb_bitvec[1]))
+`ifdef SINGLE_CYCLE_INT_DIVIDE
+                                    ( (is_mult(r_alu_sched_uops[i].op) ?  !r_wb_bitvec[`MUL_LAT+1] : !r_wb_bitvec[1]) )
+`else
+                                     (is_div(r_alu_sched_uops[i].op) ?  t_div_ready :  (is_mult(r_alu_sched_uops[i].op) ?  !r_wb_bitvec[`MUL_LAT+1] : !r_wb_bitvec[1]))
+`endif
 				     ? (
 					(t_alu_srcA_match[i] |r_alu_srcA_rdy[i]) & 
 					(t_alu_srcB_match[i] |r_alu_srcB_rdy[i]) &
