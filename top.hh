@@ -37,7 +37,7 @@
 #include "linux_monitor.hh"
 #include "pipeline_record.hh"
 
-#include "Vcore_l1d_l1i__Dpi.h"
+#include "Vcore_l1d_l1i.h"
 #include "svdpi.h"
 
 template <typename A, typename B>

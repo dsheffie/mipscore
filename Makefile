@@ -2,7 +2,7 @@ UNAME_S = $(shell uname -s)
 
 OBJ = top.o verilated.o verilated_vcd_c.o loadelf.o interpret.o disassemble.o helper.o saveState.o sparse_mem.o interpret64.o linux_o32_syscall.o
 
-SV_SRC = core_l1d_l1i.sv core.sv exec.sv decode_mips32.sv ext_mask.sv shiftregbit.sv shift_right.sv mul.sv find_first_set.sv divider.sv l1d.sv l1i.sv machine.vh rob.vh uop.vh fpu.sv utlb.sv tlb.sv fp_mul.sv fp_add.sv ram1r1w.sv ram2r1w.sv popcount.sv count_leading_zeros.sv fp_trunc_to_int32.sv fp_div.sv unsigned_divider.sv fp_convert.sv fair_sched.sv fp_compare.sv fp_compare.vh
+SV_SRC = core_l1d_l1i.v core.v exec.v decode_mips32.v ext_mask.v shiftregbit.v shift_right.v mul.v find_first_set.v divider.v l1d.v l1i.v fpu.v utlb.v tlb.v fp_mul.v fp_add.v ram1r1w.v ram2r1w.v popcount.v count_leading_zeros.v fp_trunc_to_int32.v fp_div.v unsigned_divider.v fp_convert.v fair_sched.v fp_compare.v 
 
 ifeq ($(UNAME_S),Linux)
 	CXX = clang++-12 -flto
@@ -62,7 +62,7 @@ verilated_vcd_c.o: $(VERILATOR_VCD)
 	$(CXX) -MMD $(CXXFLAGS) -c $< 
 
 obj_dir/Vcore_l1d_l1i__ALL.a : $(SV_SRC)
-	$(VERILATOR) -cc core_l1d_l1i.sv
+	$(VERILATOR) -cc core_l1d_l1i.v
 	$(MAKE) OPT_FAST="-O3 -flto" -C obj_dir -f Vcore_l1d_l1i.mk
 
 gen_html : gen_html.cc pipeline_record.hh
