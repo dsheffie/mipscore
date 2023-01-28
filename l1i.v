@@ -95,14 +95,14 @@ module l1i (
 	input wire insn_ack_two;
 	input wire mem_req_ack;
 	output wire mem_req_valid;
-	localparam L1I_NUM_SETS = 4096;
+	localparam L1I_NUM_SETS = 256;
 	localparam L1I_CL_LEN = 16;
 	localparam L1I_CL_LEN_BITS = 128;
 	localparam LG_WORDS_PER_CL = 2;
 	localparam WORDS_PER_CL = 4;
-	localparam N_TAG_BITS = 48;
+	localparam N_TAG_BITS = 52;
 	localparam IDX_START = 4;
-	localparam IDX_STOP = 16;
+	localparam IDX_STOP = 12;
 	localparam WORD_START = 2;
 	localparam WORD_STOP = 4;
 	localparam N_FQ_ENTRIES = 8;
@@ -118,9 +118,9 @@ module l1i (
 	input wire [4:0] mem_rsp_opcode;
 	output wire [63:0] cache_accesses;
 	output wire [63:0] cache_hits;
-	reg [47:0] t_cache_tag;
-	reg [47:0] r_cache_tag;
-	wire [47:0] r_tag_out;
+	reg [51:0] t_cache_tag;
+	reg [51:0] r_cache_tag;
+	wire [51:0] r_tag_out;
 	reg r_pht_update;
 	wire [1:0] r_pht_out;
 	wire [1:0] r_pht_update_out;
@@ -132,8 +132,8 @@ module l1i (
 	reg r_take_br;
 	reg [63:0] r_btb [127:0];
 	wire [15:0] r_jump_out;
-	reg [11:0] t_cache_idx;
-	reg [11:0] r_cache_idx;
+	reg [7:0] t_cache_idx;
+	reg [7:0] r_cache_idx;
 	wire [127:0] r_array_out;
 	reg r_mem_req_valid;
 	reg n_mem_req_valid;
@@ -495,7 +495,7 @@ module l1i (
 					t_clear_fq = 1'b1;
 				end
 			3'd1: begin
-				t_cache_idx = r_pc[15:IDX_START];
+				t_cache_idx = r_pc[11:IDX_START];
 				t_cache_tag = r_pc[63:IDX_STOP];
 				n_cache_pc = r_pc;
 				n_req = 1'b1;
@@ -580,25 +580,24 @@ module l1i (
 						t_is_ret = 1'b1;
 						n_delay_slot = 1'b1;
 						t_take_br = 1'b1;
-					        case(r_spec_rs_tos)
-						  2'd0:
-						    begin
-						       n_pc = r_spec_return_stack[127:64];
-						    end
-						  2'd1:
-						    begin
-						       n_pc = r_spec_return_stack[191:128];
-						    end
-						  2'd2:
-						    begin
-						       n_pc = r_spec_return_stack[255:192];						       
-						    end
-						  2'd3:
-						    begin
-						       n_pc = r_spec_return_stack[63:0];
-						    end
-						endcase
-
+                                               case(r_spec_rs_tos)
+                                                 2'd0:
+                                                   begin
+                                                      n_pc = r_spec_return_stack[127:64];
+                                                   end
+                                                 2'd1:
+                                                   begin
+                                                      n_pc = r_spec_return_stack[191:128];
+                                                   end
+                                                 2'd2:
+                                                   begin
+                                                      n_pc = r_spec_return_stack[255:192];                                                    
+                                                   end
+                                                 2'd3:
+                                                   begin
+                                                      n_pc = r_spec_return_stack[63:0];
+                                                   end
+                                               endcase
 					end
 					else if ((t_pd == 4'd4) || (t_pd == 4'd6)) begin
 						t_is_cflow = 1'b1;
@@ -654,7 +653,7 @@ module l1i (
 				if (mem_rsp_valid)
 					n_state = 3'd3;
 			3'd3: begin
-				t_cache_idx = r_miss_pc[15:IDX_START];
+				t_cache_idx = r_miss_pc[11:IDX_START];
 				t_cache_tag = r_miss_pc[63:IDX_STOP];
 				if (n_flush_req) begin
 					n_flush_req = 1'b0;
@@ -678,14 +677,14 @@ module l1i (
 				end
 			end
 			3'd4: begin
-				if (r_cache_idx == 4095) begin
+				if (r_cache_idx == 255) begin
 					n_flush_complete = 1'b1;
 					n_state = 3'd0;
 				end
 				t_cache_idx = r_cache_idx + 'd1;
 			end
 			3'd5: begin
-				t_cache_idx = r_miss_pc[15:IDX_START];
+				t_cache_idx = r_miss_pc[11:IDX_START];
 				t_cache_tag = r_miss_pc[63:IDX_STOP];
 				n_cache_pc = r_miss_pc;
 				if (!fq_full) begin
@@ -709,7 +708,7 @@ module l1i (
 				end
 			end
 			3'd6: begin
-				t_cache_idx = r_miss_pc[15:IDX_START];
+				t_cache_idx = r_miss_pc[11:IDX_START];
 				t_cache_tag = r_miss_pc[63:IDX_STOP];
 				if (tlb_rsp_valid) begin
 					n_cache_pc = r_miss_pc;
@@ -753,7 +752,7 @@ module l1i (
 	end
 	reg t_wr_valid_ram_en = mem_rsp_valid || (r_state == 3'd4);
 	reg t_valid_ram_value = r_state != 3'd4;
-	reg [11:0] t_valid_ram_idx = (mem_rsp_valid ? r_mem_req_addr[15:IDX_START] : r_cache_idx);
+	reg [7:0] t_valid_ram_idx = (mem_rsp_valid ? r_mem_req_addr[11:IDX_START] : r_cache_idx);
 	always @(*) t_xor_pc_hist = {n_cache_pc[25:2], 8'd0} ^ r_spec_gbl_hist;
 	xor_fold #(
 		.IN_W(32),
@@ -808,7 +807,7 @@ module l1i (
 	);
 	ram1r1w #(
 		.WIDTH(1),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) valid_array(
 		.clk(clk),
 		.rd_addr(t_cache_idx),
@@ -819,11 +818,11 @@ module l1i (
 	);
 	ram1r1w #(
 		.WIDTH(N_TAG_BITS),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) tag_array(
 		.clk(clk),
 		.rd_addr(t_cache_idx),
-		.wr_addr(r_mem_req_addr[15:IDX_START]),
+		.wr_addr(r_mem_req_addr[11:IDX_START]),
 		.wr_data(r_mem_req_addr[63:IDX_STOP]),
 		.wr_en(mem_rsp_valid),
 		.rd_data(r_tag_out)
@@ -834,22 +833,22 @@ module l1i (
 	endfunction
 	ram1r1w #(
 		.WIDTH(L1I_CL_LEN_BITS),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) insn_array(
 		.clk(clk),
 		.rd_addr(t_cache_idx),
-		.wr_addr(r_mem_req_addr[15:IDX_START]),
+		.wr_addr(r_mem_req_addr[11:IDX_START]),
 		.wr_data({bswap32(mem_rsp_load_data[127:96]), bswap32(mem_rsp_load_data[95:64]), bswap32(mem_rsp_load_data[63:32]), bswap32(mem_rsp_load_data[31:0])}),
 		.wr_en(mem_rsp_valid),
 		.rd_data(r_array_out)
 	);
 	ram1r1w #(
 		.WIDTH(16),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) pd_data(
 		.clk(clk),
 		.rd_addr(t_cache_idx),
-		.wr_addr(r_mem_req_addr[15:IDX_START]),
+		.wr_addr(r_mem_req_addr[11:IDX_START]),
 		.wr_data({predecode(bswap32(mem_rsp_load_data[127:96])), predecode(bswap32(mem_rsp_load_data[95:64])), predecode(bswap32(mem_rsp_load_data[63:32])), predecode(bswap32(mem_rsp_load_data[31:0]))}),
 		.wr_en(mem_rsp_valid),
 		.rd_data(r_jump_out)

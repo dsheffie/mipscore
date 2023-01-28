@@ -38,7 +38,7 @@ module l1d (
 	cache_hits,
 	cache_hits_under_miss
 );
-	localparam L1D_NUM_SETS = 4096;
+	localparam L1D_NUM_SETS = 256;
 	localparam L1D_CL_LEN = 16;
 	localparam L1D_CL_LEN_BITS = 128;
 	input wire clk;
@@ -82,9 +82,9 @@ module l1d (
 	localparam LG_WORDS_PER_CL = 2;
 	localparam LG_DWORDS_PER_CL = 1;
 	localparam WORDS_PER_CL = 4;
-	localparam N_TAG_BITS = 48;
+	localparam N_TAG_BITS = 52;
 	localparam IDX_START = 4;
-	localparam IDX_STOP = 16;
+	localparam IDX_STOP = 12;
 	localparam WORD_START = 2;
 	localparam WORD_STOP = 4;
 	localparam DWORD_START = 3;
@@ -177,31 +177,31 @@ module l1d (
 	reg n_lock_cache;
 	reg [31:0] rr_uuid;
 	reg [3:0] r_n_inflight;
-	reg [11:0] t_cache_idx;
-	reg [11:0] r_cache_idx;
-	reg [11:0] rr_cache_idx;
-	reg [47:0] t_cache_tag;
-	reg [47:0] r_cache_tag;
-	wire [47:0] r_tag_out;
-	reg [47:0] rr_cache_tag;
+	reg [7:0] t_cache_idx;
+	reg [7:0] r_cache_idx;
+	reg [7:0] rr_cache_idx;
+	reg [51:0] t_cache_tag;
+	reg [51:0] r_cache_tag;
+	wire [51:0] r_tag_out;
+	reg [51:0] rr_cache_tag;
 	wire r_valid_out;
 	wire r_dirty_out;
 	wire [127:0] r_array_out;
 	reg [127:0] t_data;
 	reg [127:0] t_data2;
-	reg [11:0] t_cache_idx2;
-	reg [11:0] r_cache_idx2;
-	reg [47:0] t_cache_tag2;
-	reg [47:0] r_cache_tag2;
-	wire [47:0] r_tag_out2;
+	reg [7:0] t_cache_idx2;
+	reg [7:0] r_cache_idx2;
+	reg [51:0] t_cache_tag2;
+	reg [51:0] r_cache_tag2;
+	wire [51:0] r_tag_out2;
 	wire r_valid_out2;
 	wire r_dirty_out2;
 	wire [127:0] r_array_out2;
-	reg [11:0] t_miss_idx;
-	reg [11:0] r_miss_idx;
+	reg [7:0] t_miss_idx;
+	reg [7:0] r_miss_idx;
 	reg [63:0] t_miss_addr;
 	reg [63:0] r_miss_addr;
-	reg [11:0] t_array_wr_addr;
+	reg [7:0] t_array_wr_addr;
 	reg [127:0] t_array_wr_data;
 	reg [127:0] r_array_wr_data;
 	reg t_array_wr_en;
@@ -273,7 +273,7 @@ module l1d (
 	reg [3:0] n_mq_tail_ptr;
 	reg [3:0] t_mq_tail_ptr_plus_one;
 	reg [7:0] r_mq_addr_valid;
-	reg [11:0] r_mq_addr [7:0];
+	reg [7:0] r_mq_addr [7:0];
 	wire [245:0] t_mem_tail;
 	reg [245:0] t_mem_head;
 	reg mem_q_full;
@@ -397,7 +397,7 @@ module l1d (
 	always @(posedge clk)
 		if (t_push_miss) begin
 			r_mem_q[r_mq_tail_ptr[2:0]] <= tt_req;
-			r_mq_addr[r_mq_tail_ptr[2:0]] <= tt_req[197:186];
+			r_mq_addr[r_mq_tail_ptr[2:0]] <= tt_req[193:186];
 		end
 	always @(posedge clk)
 		if (reset)
@@ -529,18 +529,18 @@ module l1d (
 		r_core_mem_rsp <= n_core_mem_rsp;
 	end
 	always @(*) begin
-		t_array_wr_addr = (mem_rsp_valid ? r_mem_req_addr[15:IDX_START] : r_cache_idx);
+		t_array_wr_addr = (mem_rsp_valid ? r_mem_req_addr[11:IDX_START] : r_cache_idx);
 		t_array_wr_data = (mem_rsp_valid ? mem_rsp_load_data : t_array_data);
 		t_array_wr_en = mem_rsp_valid || t_wr_array;
 	end
 	ram2r1w #(
 		.WIDTH(N_TAG_BITS),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) dc_tag(
 		.clk(clk),
 		.rd_addr0(t_cache_idx),
 		.rd_addr1(t_cache_idx2),
-		.wr_addr(r_mem_req_addr[15:IDX_START]),
+		.wr_addr(r_mem_req_addr[11:IDX_START]),
 		.wr_data(r_mem_req_addr[63:IDX_STOP]),
 		.wr_en(mem_rsp_valid),
 		.rd_data0(r_tag_out),
@@ -548,7 +548,7 @@ module l1d (
 	);
 	ram2r1w #(
 		.WIDTH(L1D_CL_LEN_BITS),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) dc_data(
 		.clk(clk),
 		.rd_addr0(t_cache_idx),
@@ -561,13 +561,13 @@ module l1d (
 	);
 	reg t_dirty_value;
 	reg t_write_dirty_en;
-	reg [11:0] t_dirty_wr_addr;
+	reg [7:0] t_dirty_wr_addr;
 	always @(*) begin
 		t_dirty_value = 1'b0;
 		t_write_dirty_en = 1'b0;
 		t_dirty_wr_addr = r_cache_idx;
 		if (mem_rsp_valid) begin
-			t_dirty_wr_addr = r_mem_req_addr[15:IDX_START];
+			t_dirty_wr_addr = r_mem_req_addr[11:IDX_START];
 			t_write_dirty_en = 1'b1;
 		end
 		else if (t_wr_array) begin
@@ -577,7 +577,7 @@ module l1d (
 	end
 	ram2r1w #(
 		.WIDTH(1),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) dc_dirty(
 		.clk(clk),
 		.rd_addr0(t_cache_idx),
@@ -590,7 +590,7 @@ module l1d (
 	);
 	reg t_valid_value;
 	reg t_write_valid_en;
-	reg [11:0] t_valid_wr_addr;
+	reg [7:0] t_valid_wr_addr;
 	always @(*) begin
 		t_valid_value = 1'b0;
 		t_write_valid_en = 1'b0;
@@ -598,14 +598,14 @@ module l1d (
 		if (t_mark_invalid)
 			t_write_valid_en = 1'b1;
 		else if (mem_rsp_valid) begin
-			t_valid_wr_addr = r_mem_req_addr[15:IDX_START];
+			t_valid_wr_addr = r_mem_req_addr[11:IDX_START];
 			t_valid_value = !r_inhibit_write;
 			t_write_valid_en = 1'b1;
 		end
 	end
 	ram2r1w #(
 		.WIDTH(1),
-		.LG_DEPTH(12)
+		.LG_DEPTH(8)
 	) dc_valid(
 		.clk(clk),
 		.rd_addr0(t_cache_idx),
@@ -924,8 +924,8 @@ module l1d (
 		n_reload_issue = r_reload_issue;
 		n_did_reload = 1'b0;
 		n_lock_cache = r_lock_cache;
-		t_mh_block = (r_got_req && r_last_wr) && (r_cache_idx == t_mem_head[197:186]);
-		t_cm_block = ((r_got_req && r_last_wr) && (r_cache_idx == core_mem_req[197:186])) && (r_cache_tag == core_mem_req[245:198]);
+		t_mh_block = (r_got_req && r_last_wr) && (r_cache_idx == t_mem_head[193:186]);
+		t_cm_block = ((r_got_req && r_last_wr) && (r_cache_idx == core_mem_req[193:186])) && (r_cache_tag == core_mem_req[245:194]);
 		t_cm_block_stall = t_cm_block && !(r_did_reload || r_is_retry);
 		case (r_state)
 			4'd0: begin
@@ -1051,8 +1051,8 @@ module l1d (
 							if (r_graduated[t_mem_head[108-:5]] == 2'b10) begin
 								t_pop_mq = 1'b1;
 								n_req = t_mem_head;
-								t_cache_idx = t_mem_head[197:186];
-								t_cache_tag = t_mem_head[245:198];
+								t_cache_idx = t_mem_head[193:186];
+								t_cache_tag = t_mem_head[245:194];
 								t_addr = t_mem_head[245-:64];
 								t_got_req = 1'b1;
 								n_is_retry = 1'b1;
@@ -1079,17 +1079,17 @@ module l1d (
 						else begin
 							t_pop_mq = 1'b1;
 							n_req = t_mem_head;
-							t_cache_idx = t_mem_head[197:186];
-							t_cache_tag = t_mem_head[245:198];
+							t_cache_idx = t_mem_head[193:186];
+							t_cache_tag = t_mem_head[245:194];
 							t_addr = t_mem_head[245-:64];
 							t_got_req = 1'b1;
 							n_is_retry = 1'b1;
 							n_last_rd = 1'b1;
 							t_got_rd_retry = 1'b1;
 						end
-				if ((((((core_mem_req_valid && !t_got_miss) && !(mem_q_almost_full || mem_q_full)) && !t_got_rd_retry) && !((r_last_wr2 && (r_cache_idx2 == core_mem_req[197:186])) && !core_mem_req[180])) && !t_cm_block_stall) && (r_graduated[core_mem_req[108-:5]] == 2'b00)) begin
-					t_cache_idx2 = core_mem_req[197:186];
-					t_cache_tag2 = core_mem_req[245:198];
+				if ((((((core_mem_req_valid && !t_got_miss) && !(mem_q_almost_full || mem_q_full)) && !t_got_rd_retry) && !((r_last_wr2 && (r_cache_idx2 == core_mem_req[193:186])) && !core_mem_req[180])) && !t_cm_block_stall) && (r_graduated[core_mem_req[108-:5]] == 2'b00)) begin
+					t_cache_idx2 = core_mem_req[193:186];
+					t_cache_tag2 = core_mem_req[245:194];
 					n_req2 = core_mem_req;
 					core_mem_req_ack = 1'b1;
 					t_got_req2 = 1'b1;
@@ -1111,7 +1111,7 @@ module l1d (
 						$stop;
 					if (r_got_req && r_last_wr)
 						$stop;
-					t_cache_idx = flush_cl_addr[15:IDX_START];
+					t_cache_idx = flush_cl_addr[11:IDX_START];
 					n_flush_cl_req = 1'b0;
 					n_state = 4'd5;
 				end
@@ -1128,8 +1128,8 @@ module l1d (
 					n_reload_issue = 1'b0;
 				end
 			4'd8: begin
-				t_cache_idx = r_req[197:186];
-				t_cache_tag = r_req[245:198];
+				t_cache_idx = r_req[193:186];
+				t_cache_tag = r_req[245:194];
 				n_last_wr = n_req[180];
 				t_got_req = 1'b1;
 				t_addr = r_req[245-:64];
@@ -1158,7 +1158,7 @@ module l1d (
 				end
 			4'd3: begin
 				t_cache_idx = r_cache_idx + 'd1;
-				if (r_cache_idx == 4095) begin
+				if (r_cache_idx == 255) begin
 					n_state = 4'd0;
 					n_flush_complete = 1'b1;
 				end
