@@ -1,4 +1,5 @@
 #include "top.hh"
+#include "m1cycles.hh"
 
 #define BRANCH_DEBUG 1
 #define CACHE_STATS 1
@@ -363,7 +364,7 @@ int main(int argc, char **argv) {
   initState(ss);
   globals::sysArgc = buildArgcArgv(mips_binary.c_str(),sysArgs.c_str(),&globals::sysArgv);
   initCapstone();
-
+  setup_performance_counters();
 
   if(use_checkpoint) {
     loadState(*s, mips_binary.c_str());
@@ -421,6 +422,10 @@ int main(int argc, char **argv) {
   uint64_t n_branches = 0, n_mispredicts = 0, n_checks = 0, n_flush_cycles = 0;
   uint64_t n_iside_tlb_misses = 0, n_dside_tlb_misses = 0;
   bool got_mem_req = false, got_mem_rsp = false, got_monitor = false, incorrect = false;
+
+
+
+  
   //assert reset
   for(globals::cycle = 0; (globals::cycle < 4) && !Verilated::gotFinish(); ++globals::cycle) {
     contextp->timeInc(1);  // 1 timeprecision period passes...
@@ -671,6 +676,8 @@ int main(int argc, char **argv) {
   //std::cout << getAsmString(get_insn(0xa45b0, s), 0xa45b0) << "\n";
   
   double t0 = timestamp();
+  performance_counters start = get_counters();
+  
   while(!Verilated::gotFinish() && (globals::cycle < max_cycle) && (insns_retired < max_icnt)) {
     contextp->timeInc(1);  // 1 timeprecision periodd passes...    
 
@@ -1225,8 +1232,18 @@ int main(int argc, char **argv) {
     ++globals::cycle;
   }
   tb->final();
-  t0 = timestamp() - t0;
 
+  performance_counters end = get_counters();
+  t0 = timestamp() - t0;
+  
+  performance_counters diff = end - start;
+  std::cout << "retired " << diff.instructions << " arm instructions\n";
+  std::cout << "in " << diff.cycles << " cycles\n";
+  std::cout << static_cast<double>(diff.instructions)/diff.cycles << " ipc\n";
+  
+
+
+  
   if(incorrect) {
     s->mem.compare(ss->mem);
   }
