@@ -230,6 +230,10 @@ module core(clk,
    logic [N_PRF_ENTRIES-1:0] n_fp_prf_free, r_fp_prf_free, t_fp_prf_free;   
    logic [N_PRF_ENTRIES-1:0] n_retire_fp_prf_free, r_retire_fp_prf_free;
    logic [`LG_PRF_ENTRIES:0] t_fp_prf_free_cnt;
+
+   wire [N_PRF_ENTRIES-1:0]  w_fp_prf_free_even, w_fp_prf_free_odd;
+   wire 		     w_fp_prf_free_even_full, w_fp_prf_free_odd_full;
+   
    
    logic [N_HILO_ENTRIES-1:0] n_hilo_prf_free,r_hilo_prf_free;
    logic [N_HILO_ENTRIES-1:0] n_retire_hilo_prf_free, r_retire_hilo_prf_free;
@@ -357,6 +361,8 @@ module core(clk,
    logic [`LG_PRF_ENTRIES:0] 	    t_gpr_ffs, t_gpr_ffs2;
    wire [`LG_PRF_ENTRIES:0] 	    w_gpr_ffs_even, w_gpr_ffs_odd;
    logic 			    t_gpr_ffs_full, t_gpr_ffs2_full;
+   wire [`LG_PRF_ENTRIES:0] 	    w_fp_ffs_even, w_fp_ffs_odd;
+   logic 			    t_fp_ffs_full, t_fp_ffs2_full;
    
    logic 			    r_bank_sel;
    
@@ -783,12 +789,12 @@ module core(clk,
 	
 	t_enough_iprfs = !((t_uop.dst_valid) && t_gpr_ffs_full);
 	t_enough_hlprfs = !((t_uop.hilo_dst_valid) && (r_hilo_prf_free == 'd0));
-	t_enough_fprfs = !((t_uop.fp_dst_valid) && (r_fp_prf_free == 'd0));
+	t_enough_fprfs = !((t_uop.fp_dst_valid) && t_fp_ffs_full);
 	t_enough_fcrprfs = !((t_uop.fcr_dst_valid) && (r_fcr_prf_free == 'd0));
 
 	t_enough_next_iprfs = !((t_uop2.dst_valid) && t_gpr_ffs2_full);
 	t_enough_next_hlprfs = !((t_uop2.hilo_dst_valid) /*&& (r_hilo_prf_free == 'd0)*/);
-	t_enough_next_fprfs = !((t_uop2.fp_dst_valid) && (t_fp_prf_free_cnt == 'd1));
+	t_enough_next_fprfs = !((t_uop2.fp_dst_valid) && t_fp_ffs2_full);
 	t_enough_next_fcrprfs = !((t_uop2.fcr_dst_valid) /*&& (r_fcr_prf_free == 'd0)*/);
 
 
@@ -2097,23 +2103,12 @@ module core(clk,
      end // always_ff@ (posedge clk)
    
 
-
-   popcount #(`LG_PRF_ENTRIES) cnt_fpr (.in(r_fp_prf_free), 
-					.out(t_fp_prf_free_cnt));
    
-
-   find_first_set#(`LG_PRF_ENTRIES) ffs_fp(.in(r_fp_prf_free),
-					   .y(t_fp_ffs));
-
-   always_comb
-     begin
-	t_fp_prf_free = r_fp_prf_free;
-	t_fp_prf_free[t_fp_ffs[`LG_PRF_ENTRIES-1:0]] = 1'b0;
-     end
-
+   find_first_set#(`LG_PRF_ENTRIES) ffs_fp(.in(w_fp_prf_free_even),
+					   .y(w_fp_ffs_even));
    
-   find_first_set#(`LG_PRF_ENTRIES) ffs_fp2(.in(t_fp_prf_free),
-					    .y(t_fp_ffs2));
+   find_first_set#(`LG_PRF_ENTRIES) ffs_fp2(.in(w_fp_prf_free_odd),
+					    .y(w_fp_ffs_odd));
 
    
    
@@ -2236,11 +2231,17 @@ module core(clk,
            assign w_prf_free_even[i+1] = 1'b0;
            assign w_prf_free_odd[i] = 1'b0;
            assign w_prf_free_odd[i+1] = r_prf_free[i+1];
+           assign w_fp_prf_free_even[i] = r_fp_prf_free[i];
+           assign w_fp_prf_free_even[i+1] = 1'b0;
+           assign w_fp_prf_free_odd[i] = 1'b0;
+           assign w_fp_prf_free_odd[i+1] = r_fp_prf_free[i+1];	   
         end
    endgenerate
    
    assign w_prf_free_even_full = (|w_prf_free_even) == 1'b0;
    assign w_prf_free_odd_full = (|w_prf_free_odd) == 1'b0;
+   assign w_fp_prf_free_even_full = (|w_fp_prf_free_even) == 1'b0;
+   assign w_fp_prf_free_odd_full = (|w_fp_prf_free_odd) == 1'b0;
    
    
    find_first_set#(`LG_PRF_ENTRIES) ffs_gpr(.in(w_prf_free_even),
@@ -2248,6 +2249,7 @@ module core(clk,
    
    find_first_set#(`LG_PRF_ENTRIES) ffs_gpr2(.in(w_prf_free_odd),
 					     .y(w_gpr_ffs_odd));
+   
    always_ff@(posedge clk)
      begin
 	r_bank_sel <= reset ? 1'b0 : ~r_bank_sel;
@@ -2255,10 +2257,15 @@ module core(clk,
 
    always_comb
      begin
-	t_gpr_ffs = r_bank_sel ? w_gpr_ffs_even : w_gpr_ffs_odd;
 	t_gpr_ffs_full = r_bank_sel ? w_prf_free_even_full : w_prf_free_odd_full;
-	t_gpr_ffs2 = r_bank_sel ? w_gpr_ffs_odd : w_gpr_ffs_even;
 	t_gpr_ffs2_full = r_bank_sel ? w_prf_free_odd_full : w_prf_free_even_full;
+	t_gpr_ffs = r_bank_sel ? w_gpr_ffs_even : w_gpr_ffs_odd;
+	t_gpr_ffs2 = r_bank_sel ? w_gpr_ffs_odd : w_gpr_ffs_even;
+
+	t_fp_ffs_full = r_bank_sel ? w_fp_prf_free_even_full : w_fp_prf_free_odd_full;
+	t_fp_ffs2_full = r_bank_sel ? w_fp_prf_free_odd_full : w_fp_prf_free_even_full;
+	t_fp_ffs = r_bank_sel ? w_fp_ffs_even : w_fp_ffs_odd;
+	t_fp_ffs2 = r_bank_sel ? w_fp_ffs_odd : w_fp_ffs_even;
      end
    
    
