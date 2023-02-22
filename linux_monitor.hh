@@ -16,7 +16,6 @@ static inline bool emulate_linux_syscall(Vcore_l1d_l1i *tb, state_t *s) {
   else {
     tb->monitor_rsp_data = s->gpr[R_v0];
   }
-  tb->monitor_rsp_data_valid = 1;
   /* HACK!!! */
   s->gpr[R_a3] = 0;
   tb->monitor_rsp_valid = 1;

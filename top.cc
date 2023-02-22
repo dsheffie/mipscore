@@ -426,8 +426,6 @@ int main(int argc, char **argv) {
     contextp->timeInc(1);  // 1 timeprecision period passes...
     tb->mem_rsp_valid = 0;
     tb->mem_rsp_opcode = 0;
-    tb->monitor_rsp_valid = 0;
-    tb->monitor_rsp_data_valid = 0;
     tb->monitor_rsp_data = 0;    
     tb->reset = 1;
     tb->extern_irq = 0;
@@ -699,7 +697,6 @@ int main(int argc, char **argv) {
 	  char *path = reinterpret_cast<char*>(s->mem.get_raw_ptr(s->gpr[R_a0]));
 	  int32_t flags = remapIOFlags(s->gpr[R_a1]);
 	  tb->monitor_rsp_data = open(path, flags, S_IRUSR|S_IWUSR);	  
-	  tb->monitor_rsp_data_valid = 1;
 	  handled = true;
 #ifdef PRINT_SYSCALL
 	  std::cout << insns_retired << " open " << path << " " << tb->monitor_rsp_data << "\n";
@@ -718,7 +715,6 @@ int main(int argc, char **argv) {
 		    << tb->monitor_rsp_data
 		    << "\n";
 #endif
-	  tb->monitor_rsp_data_valid = 1;
 	  handled = true;
 	  break;
 
@@ -737,14 +733,12 @@ int main(int argc, char **argv) {
 	  else if(fd==2)
 	    fflush(stderr);
 
-	  tb->monitor_rsp_data_valid = 1;
 	  handled = true;
 	  break;
 	}
 	case 9: { /* lseek */
 	  handled = true;
 	  tb->monitor_rsp_data  = lseek(s->gpr[R_a0], s->gpr[R_a1], s->gpr[R_a2]);
-	  tb->monitor_rsp_data_valid = 1;
 	  break;
 	}
 	case 10: { /* close */
@@ -757,7 +751,6 @@ int main(int argc, char **argv) {
 #ifdef PRINT_SYSCALL
 	  std::cout << insns_retired << " close " << fd << "\n";
 #endif
-	  tb->monitor_rsp_data_valid = 1;
 	  break;
 	}
 	case 33: {
@@ -765,7 +758,6 @@ int main(int argc, char **argv) {
 	  uint32_t uptr = *(uint32_t*)(s->gpr + R_a0);
 	  s->mem.set<uint32_t>(uptr, 0);
 	  s->mem.set<uint32_t>(uptr+4, 0);
-	  tb->monitor_rsp_data_valid = 1;
 	  tb->monitor_rsp_data = 0;
 	  break;
 	}
@@ -775,7 +767,6 @@ int main(int argc, char **argv) {
 	  for(int i = 0; i < 4; i++) {
 	    s->mem.set<uint32_t>(uptr+i,0);
 	  }
-	  tb->monitor_rsp_data_valid = 1;
 	  tb->monitor_rsp_data = 0;
 	  break;
 	}
@@ -787,14 +778,12 @@ int main(int argc, char **argv) {
 	    uint32_t ptr = bswap<IS_LITTLE_ENDIAN>(s->mem.get<uint32_t>(arrayAddr));
 	    strcpy(reinterpret_cast<char*>(s->mem.get_raw_ptr(ptr)), globals::sysArgv[i]);
 	  }
-	  tb->monitor_rsp_data_valid = 1;
 	  tb->monitor_rsp_data = globals::sysArgc;
 	  break;
 	}
 	case 50: /* get cycle */
 	  handled = true;
 	  tb->monitor_rsp_data = globals::cycle;
-	  tb->monitor_rsp_data_valid = 1;
 	  break;
 	case 51: /* nuke caches */
 	  handled = true;
@@ -806,7 +795,6 @@ int main(int argc, char **argv) {
 	case 53:
 	  handled = true;
 	  tb->monitor_rsp_data = insns_retired;
-	  tb->monitor_rsp_data_valid = 1;
 	  break;	  
 	case 55: {
 	  handled = true;
@@ -1216,7 +1204,6 @@ int main(int argc, char **argv) {
     
     if(got_monitor) {
       tb->monitor_rsp_valid = 0;
-      tb->monitor_rsp_data_valid = 0;
       tb->monitor_rsp_data = 0;
       got_monitor = false;
     }
