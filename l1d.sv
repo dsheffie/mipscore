@@ -45,8 +45,6 @@ module l1d(clk,
 	   //reply from memory system
 	   mem_rsp_valid,
 	   mem_rsp_load_data,
-	   mem_rsp_tag,
-	   mem_rsp_opcode,
 	   utlb_miss_req,
 	   utlb_miss_paddr,
 	   tlb_rsp_valid,
@@ -95,9 +93,6 @@ module l1d(clk,
 
    input logic 				  mem_rsp_valid;
    input logic [L1D_CL_LEN_BITS-1:0] 	  mem_rsp_load_data;
-   input logic [`LG_MEM_TAG_ENTRIES-1:0]  mem_rsp_tag;
-
-   input logic [4:0] 			 mem_rsp_opcode;
 
    output logic 			 utlb_miss_req;
    output logic [`M_WIDTH-`LG_PG_SZ-1:0] utlb_miss_paddr;
