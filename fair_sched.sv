@@ -5,7 +5,7 @@ module fair_sched#(parameter LG_N = 2)(clk, rst, in, y);
    input logic [N-1:0] in;
    output logic [LG_N:0] y;
 
-   logic 		 any_valid = |in;
+   wire 		 any_valid = |in;
    
    
    logic [LG_N-1:0] 	 r_cnt, n_cnt;
@@ -34,31 +34,14 @@ module fair_sched#(parameter LG_N = 2)(clk, rst, in, y);
      end // always_ff@ (posedge clk)
 
    find_first_set#(LG_N) f (.in(t_in), .y(t_y));
-   logic [LG_N-1:0] t_yy = t_y[LG_N-1:0] - r_cnt;
+   wire [LG_N-1:0] w_yy = t_y[LG_N-1:0] - r_cnt;
    
    always_comb
      begin
 	y = {(LG_N+1){1'b1}};
 	if(any_valid)
 	  begin
-	     y = {1'b0, t_yy};
+	     y = {1'b0, w_yy};
 	  end
      end
-
-   always_ff@(negedge clk)
-     begin
-	if(any_valid)
-	  begin
-	     if(in[y[LG_N-1:0]] == 1'b0)
-	       begin
-		  $display("input %b, r_cnt %d, t_in %b, t_y = %d, y = %d",
-			   in, r_cnt, t_in, t_y, y);
-		  $display("t_in_shift = %b", t_in_shift);
-		  $display("t_in2 = %b", t_in2);
-		  
-		  $stop();
-	       end
-	  end
-     end
-   
 endmodule

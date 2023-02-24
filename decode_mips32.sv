@@ -38,7 +38,7 @@ module decode_mips32(in_64b_fpreg_mode, insn,
    wire [`LG_PRF_ENTRIES-1:0] 	fd = {{ZP{1'b0}},insn[10:6]};
 
    
-   logic [`LG_PRF_ENTRIES-1:0] shamt = {{ZP{1'b0}},insn[10:6]};
+   wire [`LG_PRF_ENTRIES-1:0] 	shamt = {{ZP{1'b0}},insn[10:6]};
    
    always_comb
      begin
