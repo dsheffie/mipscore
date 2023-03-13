@@ -9,33 +9,17 @@ import "DPI-C" function void record_fetch(int push1, int push2, int push3, int p
 
 `endif
 
+module compute_pht_idx(pc, hist, idx);
+   input logic [31:0] pc;
+   input logic [`GBL_HIST_LEN-1:0] hist;
+   output logic [`LG_PHT_SZ-1:0]   idx;
 
-module xor_fold#(parameter IN_W = 32, parameter OUT_W = 16)(in,out);
-   localparam W = (IN_W/2);
+   wire [31:0] 			   w_fold_0 = hist[31:0] ^ hist[63:32];
+   wire [15:0] 			   w_fold_1 = w_fold_0[31:16] ^ w_fold_0[15:0];
 
-   input [IN_W-1:0]    in;      
-   output [W-1:0]   out;
+   assign idx = w_fold_1  ^ pc[18:3];
 
-
-   logic [W-1:0]    t;
-   always_comb
-     begin
-	t = in[IN_W-1:W]  ^ in[W-1:0];
-     end
-      
-   generate
-      if((2*W) == OUT_W)
-	begin
-	   assign out = t;
-	end
-      else
-	begin
-	   xor_fold#(W, OUT_W) f(.in(t), .out(out));
-	end
-   endgenerate
-   
-endmodule // xor_fold
-
+endmodule
 
 
 module l1i(clk,
@@ -1163,19 +1147,11 @@ endfunction
 	t_xor_pc_hist = {n_cache_pc[`GBL_HIST_LEN-7:2], 8'd0} ^ r_spec_gbl_hist;	
      end
 
-   xor_fold #(`GBL_HIST_LEN, `GBL_HIST_LEN) f0 (.in(t_xor_pc_hist), .out(n_pht_idx));
- 
+   compute_pht_idx cpi0 (.pc(n_cache_pc[31:0]), .hist(r_spec_gbl_hist), .idx(n_pht_idx));
+
    
    always_comb
      begin
-	//t_xor_pc_hist = {n_cache_pc[`GBL_HIST_LEN-7:2], 8'd0} ^ r_spec_gbl_hist;	
-	//n_pht_idx = t_xor_pc_hist[31:16] ^  t_xor_pc_hist[15:0];
-	//n_pht_idx = t_xor_pc_hist[`LG_PHT_SZ-1:0];
-
-	//n_pht_idx = r_spec_gbl_hist[15:0];
-	
-	//n_pht_idx = (n_cache_pc[15:0] ^ r_spec_gbl_hist[15:0]) ^
-        //(n_cache_pc[31:16] ^ r_spec_gbl_hist[31:16]);
 	
 	t_pht_val = r_pht_update_out;
 	t_do_pht_wr = r_pht_update;
@@ -1366,7 +1342,7 @@ endfunction
 	n_spec_gbl_hist = r_spec_gbl_hist;
 	if(n_restart_ack)
 	  begin
-	     n_spec_gbl_hist = r_arch_gbl_hist;
+	     n_spec_gbl_hist = n_arch_gbl_hist;
 	  end
 	else if(t_update_spec_hist)
 	  begin
