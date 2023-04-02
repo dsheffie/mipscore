@@ -44,7 +44,8 @@ module core_l1d_l1i(clk,
 
    localparam L1D_CL_LEN = 1 << `LG_L1D_CL_LEN;
    localparam L1D_CL_LEN_BITS = 1 << (`LG_L1D_CL_LEN + 3);
-   
+   localparam LG_L1_MQ_ENTRIES = 2;
+        
    input logic clk;
    input logic reset;
    input logic extern_irq;
@@ -352,6 +353,19 @@ module core_l1d_l1i(clk,
 
    logic 			  drain_ds_complete;
    logic [(1<<`LG_ROB_ENTRIES)-1:0] dead_rob_mask;
+
+   logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_rd_ptr, n_l1_mq_rd_ptr;
+   logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_wr_ptr, n_l1_mq_wr_ptr;
+   logic 			    mq_empty, mq_full;
+   logic 			    t_mq_ack_l1d, t_mq_ack_l1i;
+
+   l1_miss_req_t t_l1d_miss;
+   /* verilator lint_off UNOPTFLAT */  
+   wire 			    w_l1d_miss_req;
+   
+   
+
+   
    
    l1d dcache (
 	       .clk(clk),
@@ -390,6 +404,11 @@ module core_l1d_l1i(clk,
 	       .mem_rsp_valid(l1d_mem_rsp_valid),
 	       .mem_rsp_load_data(mem_rsp_load_data),
 
+	       .l1_miss(t_l1d_miss),
+	       .l1_miss_req(w_l1d_miss_req),
+	       .l1_miss_ack(w_mq_ack_l1d),
+	       
+	       
 	       .cache_accesses(t_l1d_cache_accesses),
 	       .cache_hits(t_l1d_cache_hits)
 	       );
@@ -430,6 +449,59 @@ module core_l1d_l1i(clk,
 	      .cache_accesses(t_l1i_cache_accesses),
 	      .cache_hits(t_l1i_cache_hits)	      
 	      );
+
+   l1_miss_req_t r_l1_mq[(1<<LG_L1_MQ_ENTRIES) - 1:0];
+   l1_miss_req_t t_mq_head;
+   
+   wire 			    w_mq_full = (r_l1_mq_rd_ptr!=r_l1_mq_wr_ptr) &&
+				    (r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0] == r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]);
+
+   wire 			    w_mq_ack_l1d = !w_mq_full && w_l1d_miss_req;
+   
+   always_comb
+     begin
+	t_mq_ack_l1d = 1'b0;
+	t_mq_ack_l1i = 1'b0;
+	
+	n_l1_mq_rd_ptr = r_l1_mq_rd_ptr;
+	n_l1_mq_wr_ptr = r_l1_mq_wr_ptr;
+	mq_empty = r_l1_mq_rd_ptr==r_l1_mq_wr_ptr;
+	
+	mq_full = (r_l1_mq_rd_ptr!=r_l1_mq_wr_ptr) &&
+		  (r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0] == r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]);
+
+	t_mq_head = r_l1_mq[r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0]];
+	
+	if(!mq_full)
+	  begin
+	     if(w_l1d_miss_req)
+	       begin
+		  n_l1_mq_wr_ptr = r_l1_mq_wr_ptr + 'd1;
+	       end
+	  end
+     end // always_comb
+
+   always_ff@(posedge clk)
+     begin
+	if(w_mq_ack_l1d)
+	  begin
+	     r_l1_mq[r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]] <= t_l1d_miss;
+	  end
+     end
+
+   always_ff@(posedge clk)
+     begin
+	r_l1_mq_rd_ptr <= reset ? 'd0 : n_l1_mq_rd_ptr;
+	r_l1_mq_wr_ptr <= reset ? 'd0 : n_l1_mq_wr_ptr;
+     end
+
+   always_ff@(negedge clk)
+     begin
+	if(!mq_empty)
+	  begin
+	     $display("head of mq addr %x",  t_mq_head.addr);
+	  end
+     end
    	      
    core cpu (
 	     .clk(clk),

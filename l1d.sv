@@ -44,10 +44,15 @@ module l1d(clk,
 	   mem_req_valid, 
 	   mem_req_addr, 
 	   mem_req_store_data, 
-	   mem_req_opcode,
+	   mem_req_opcode,	   	   
 	   //reply from memory system
 	   mem_rsp_valid,
 	   mem_rsp_load_data,
+	   
+	   l1_miss,
+	   l1_miss_req,
+	   l1_miss_ack,
+	   
 	   cache_accesses,
 	   cache_hits
 	   );
@@ -96,6 +101,10 @@ module l1d(clk,
    input logic 				  mem_rsp_valid;
    input logic [L1D_CL_LEN_BITS-1:0] 	  mem_rsp_load_data;
 
+   output 				  l1_miss_req_t l1_miss;
+   output logic 			  l1_miss_req;
+   input logic 				  l1_miss_ack;
+   
    
    output logic [63:0] 			 cache_accesses;
    output logic [63:0] 			 cache_hits;
@@ -233,7 +242,10 @@ endfunction
    
    logic 				  n_core_mem_rsp_valid, r_core_mem_rsp_valid;
    mem_rsp_t n_core_mem_rsp, r_core_mem_rsp;
-      
+
+   l1_miss_req_t t_l1_miss, r_l1_miss;
+   
+   
    mem_req_t n_req, r_req, t_req;
    mem_req_t n_req2, r_req2;
 
@@ -259,7 +271,8 @@ endfunction
                              FLUSH_CACHE_WAIT,
                              FLUSH_CL,
                              FLUSH_CL_WAIT,
-                             HANDLE_RELOAD
+                             HANDLE_RELOAD,
+			     WAIT_FOR_ACK
                              } state_t;
 
    
@@ -294,6 +307,8 @@ endfunction
    assign cache_accesses = r_cache_accesses;
    assign cache_hits = r_cache_hits;
 
+   assign l1_miss = t_l1_miss;
+   
    
    always_ff@(posedge clk)
      begin
@@ -681,6 +696,7 @@ endfunction
      begin
 	r_req <= n_req;
 	r_req2 <= n_req2;
+	r_l1_miss <= t_l1_miss;
 	r_core_mem_rsp <= n_core_mem_rsp;
      end
 
@@ -1211,6 +1227,9 @@ endfunction
 	
 	n_req = r_req;
 	n_req2 = r_req2;
+
+	t_l1_miss = r_l1_miss;
+	l1_miss_req = 1'b0;
 	
 	core_mem_req_ack = 1'b0;
 	core_store_data_ack = 1'b0;
@@ -1366,6 +1385,13 @@ endfunction
 			      n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
 			      n_mem_req_opcode = MEM_SW;
 			      n_mem_req_store_data = t_data;
+			      
+			      t_l1_miss.is_store = 1'b1;
+			      t_l1_miss.id = {1'b0, r_req.rob_ptr};
+			      t_l1_miss.addr = {r_tag_out,r_cache_idx};
+			      t_l1_miss.data = t_data;
+			      
+			      
 			      n_inhibit_write = 1'b1;
 			      t_miss_idx = r_cache_idx;
 			      t_miss_addr = r_req.addr;
@@ -1381,7 +1407,9 @@ endfunction
 			      else
 				begin
 				   //$display("no wait");
-				   n_state = INJECT_RELOAD;				   
+				   n_state = l1_miss_ack ? INJECT_RELOAD : WAIT_FOR_ACK;
+				   l1_miss_req = 1'b1;
+				   
 				   n_mem_req_valid = 1'b1;
 				end
 			   end // if (!t_stall_for_busy)
@@ -1406,6 +1434,8 @@ endfunction
 			    t_miss_addr = r_req.addr;		       
 
 			    t_cache_idx = r_cache_idx;
+
+			    t_l1_miss.data = r_l1_miss.data;
 			    
 			    if((rr_cache_idx == r_cache_idx) && rr_last_wr)
 			      begin
@@ -1414,13 +1444,23 @@ endfunction
 			    n_mem_req_opcode = MEM_SW;
 			    n_state = WAIT_INJECT_RELOAD;
 			    n_mem_req_valid = 1'b0;
+			    
+			    t_l1_miss.is_store = 1'b1;
+				 t_l1_miss.id = {1'b0, r_req.rob_ptr};
+			    t_l1_miss.addr =  {r_tag_out,r_cache_idx};
+
 			      end                                                             
 			    else
 			      begin
 				 n_lock_cache = 1'b0;
 				 n_mem_req_addr = {r_req.addr[`M_WIDTH-1:`LG_L1D_CL_LEN], {`LG_L1D_CL_LEN{1'b0}}};
-				 n_mem_req_opcode = MEM_LW;				 
-				 n_state = INJECT_RELOAD;
+				 n_mem_req_opcode = MEM_LW;
+				 n_state = l1_miss_ack ? INJECT_RELOAD : WAIT_FOR_ACK;
+				 
+				 t_l1_miss.is_store = 1'b0;
+				 t_l1_miss.id = {1'b0, r_req.rob_ptr};
+				 t_l1_miss.addr =  {r_req.addr[`M_WIDTH-1:`LG_L1D_CL_LEN]};
+				 l1_miss_req = 1'b1;
 				 n_mem_req_valid = 1'b1;
 			      end
 			 end // if (!t_stall_for_busy)
@@ -1561,8 +1601,18 @@ endfunction
 	  WAIT_INJECT_RELOAD:
 	    begin
 	       n_mem_req_valid = 1'b1;
-	       n_state = INJECT_RELOAD;
+	       l1_miss_req = 1'b1;	       
+	       n_state = l1_miss_ack ? INJECT_RELOAD : WAIT_FOR_ACK;
 	       n_mem_req_store_data = t_data;
+	       t_l1_miss.data = t_data;
+	    end
+	  WAIT_FOR_ACK:
+	    begin
+	       l1_miss_req = 1'b1;
+	       if(l1_miss_ack)
+		 begin
+		    n_state = INJECT_RELOAD;
+		 end
 	    end
 	  INJECT_RELOAD:
 	    begin
