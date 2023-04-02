@@ -269,6 +269,7 @@ endfunction
 			     WAIT_INJECT_RELOAD,
                              FLUSH_CACHE,
                              FLUSH_CACHE_WAIT,
+			     FLUSH_CACHE_WAIT_FOR_ACK,
                              FLUSH_CL,
                              FLUSH_CL_WAIT,
                              HANDLE_RELOAD,
@@ -1585,7 +1586,7 @@ endfunction
 		    n_state = FLUSH_CACHE;
 		    if(!mem_q_empty) $stop();
 		    if(r_got_req && r_last_wr) $stop();
-		    //$display("flush begins at cycle %d, mem_q_empty = %b", r_cycle, mem_q_empty);
+		    $display("flush begins at cycle %d, mem_q_empty = %b", r_cycle, mem_q_empty);
 		    t_cache_idx = 'd0;
 		    n_flush_req = 1'b0;
 		 end
@@ -1681,15 +1682,36 @@ endfunction
 		      end
 		    else
 		      begin
+			 l1_miss_req = 1'b1; 
+			 t_l1_miss.is_store = 1'b1;
+			 t_l1_miss.id = 'd0;
+			 t_l1_miss.addr = {r_tag_out,r_cache_idx};
+			 t_l1_miss.data = t_data;
+			 t_l1_miss.iside = 1'b0;
+			 
+	 
+			 
 			 n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-	            n_mem_req_opcode = MEM_SW;
-	            n_mem_req_store_data = t_data;
-	            n_state = FLUSH_CACHE_WAIT;
-		    n_inhibit_write = 1'b1;
-	            n_mem_req_valid = 1'b1;	       
-		 end // else: !if(r_valid_out && !r_dirty_out)
+			 n_mem_req_opcode = MEM_SW;
+			 n_mem_req_store_data = t_data;
+			 n_state = l1_miss_ack ? FLUSH_CACHE_WAIT : FLUSH_CACHE_WAIT_FOR_ACK;
+			 
+			 n_inhibit_write = 1'b1;
+			 n_mem_req_valid = 1'b1;
+			 
+		      end // else: !if(r_valid_out && !r_dirty_out)
 		 end // else: !if(r_cache_idx == (L1D_NUM_SETS-1))
 	    end // case: FLUSH_CACHE
+
+	  FLUSH_CACHE_WAIT_FOR_ACK:
+	    begin
+	       l1_miss_req = 1'b1;
+	       t_cache_idx = r_cache_idx;
+	       if(l1_miss_ack)
+		 begin
+		    n_state = FLUSH_CACHE_WAIT;
+		 end
+	    end
 	  
 	  FLUSH_CACHE_WAIT:
 	    begin
