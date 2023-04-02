@@ -255,76 +255,85 @@ module core_l1d_l1i(clk,
    logic 				  l1d_mem_rsp_valid, l1i_mem_rsp_valid;
    
    state_t r_state, n_state;
-   logic 				  r_l1d_req, n_l1d_req;
-   logic 				  r_l1i_req, n_l1i_req;
-   logic 				  r_last_gnt, n_last_gnt;
    logic 				  n_req, r_req;
 
    logic 				  insn_valid,insn_valid2;
    logic 				  insn_ack, insn_ack2;
    insn_fetch_t insn, insn2;
 
+   logic 				  mq_empty, mq_full;
+   logic 				  t_pop_mq;
+   
+   l1_miss_req_t t_mq_head;
 
+   logic [`M_WIDTH-1:0] 		  r_mem_req_addr, n_mem_req_addr;
+   logic [L1D_CL_LEN_BITS-1:0] 		  r_mem_req_store_data, n_mem_req_store_data;;
+   logic [3:0] 				  r_mem_req_opcode, n_mem_req_opcode;
+
+   
+   
+   always_ff@(negedge clk)
+     begin
+	if(mem_rsp_valid)
+	  begin
+	     $display("return data %x,%x,%x,%x", 
+		      mem_rsp_load_data[127:96],
+		      mem_rsp_load_data[95:64],
+		      mem_rsp_load_data[63:32],
+		      mem_rsp_load_data[31:0]);
+	  end
+     end
    
    always_comb
      begin
+	t_pop_mq = 1'b0;
 	n_state = r_state;
-	n_last_gnt = r_last_gnt;
-	n_l1i_req = r_l1i_req || l1i_mem_req_valid;
-	n_l1d_req = r_l1d_req || l1d_mem_req_valid;
 	n_req = r_req;
 	
 	mem_req_valid = n_req;	
-	mem_req_addr = (r_state == GNT_L1I) ? l1i_mem_req_addr: l1d_mem_req_addr;
-	mem_req_store_data = l1d_mem_req_store_data;
-	mem_req_opcode = (r_state == GNT_L1I) ? l1i_mem_req_opcode : l1d_mem_req_opcode;
+	mem_req_addr = r_mem_req_addr;
+	mem_req_opcode = r_mem_req_opcode;
+	mem_req_store_data = r_mem_req_store_data;
+
+	n_mem_req_addr = r_mem_req_addr;
+	n_mem_req_opcode = r_mem_req_opcode;
+	n_mem_req_store_data = r_mem_req_store_data;
+	
 	l1d_mem_rsp_valid = 1'b0;
 	l1i_mem_rsp_valid = 1'b0;
 	
 	case(r_state)
 	  IDLE:
 	    begin
-	       if(n_l1d_req && !n_l1i_req)
+	       if(!mq_empty)
 		 begin
-		    //$display("generating memory request for the l1d");
-		    n_state = GNT_L1D;
+		    n_mem_req_addr = {t_mq_head.addr, 4'd0};
+		    n_mem_req_store_data = t_mq_head.data;
+		    n_mem_req_opcode = t_mq_head.is_store ? MEM_SW : MEM_LW;
+		    
+		    t_pop_mq = 1'b1;
 		    n_req = 1'b1;
-		 end
-	       else if(!n_l1d_req && n_l1i_req)
-		 begin
-		    //$display("generating memory request for the l1i, address %x / %x", mem_req_addr, l1i_mem_req_addr);
-		    n_state = GNT_L1I;
-		    n_req = 1'b1;
-		 end
-	       else if(n_l1d_req && n_l1i_req)
-		 begin
-		    n_state = r_last_gnt ? GNT_L1D : GNT_L1I;
-		    n_req = 1'b1;
+		    n_state = t_mq_head.iside ? GNT_L1I : GNT_L1D;
 		 end
 	    end
 	  GNT_L1D:
 	    begin
-	       n_last_gnt = 1'b0;
-	       n_l1d_req = 1'b0;
 	       if(mem_rsp_valid)
 		 begin
 		    n_req = 1'b0;
 		    n_state = IDLE;
 		    l1d_mem_rsp_valid = 1'b1;
 		 end
-	    end
-	  GNT_L1I:
-	    begin
-	       n_last_gnt = 1'b1;
-	       n_l1i_req = 1'b0;
-	       //$display("waiting for cache line for i-cache returns, req addr %x", mem_req_addr);	       
-	       if(mem_rsp_valid)
-		 begin
-		    n_req = 1'b0;		    
-		    n_state = IDLE;
-		    l1i_mem_rsp_valid = 1'b1;
-		 end
-	    end
+	    end // case: GNT_L1D
+         GNT_L1I:
+           begin
+              if(mem_rsp_valid)
+                begin
+                   n_req = 1'b0;                   
+                   n_state = IDLE;
+                   l1i_mem_rsp_valid = 1'b1;
+                end
+           end
 	  default:
 	    begin
 	    end
@@ -336,27 +345,28 @@ module core_l1d_l1i(clk,
 	if(reset)
 	  begin
 	     r_state <= IDLE;
-	     r_last_gnt <= 1'b0;
-	     r_l1d_req <= 1'b0;
-	     r_l1i_req <= 1'b0;
 	     r_req <= 1'b0;
+	     r_mem_req_addr <= 'd0;
+	     r_mem_req_store_data <= 'd0;
+	     r_mem_req_opcode <= 'd0;
 	  end
 	else
 	  begin
 	     r_state <= n_state;
-	     r_last_gnt <= n_last_gnt;
-	     r_l1d_req <= n_l1d_req;
-	     r_l1i_req <= n_l1i_req;
-	     r_req <= n_req;	     
+	     r_req <= n_req;
+	     r_mem_req_addr <= n_mem_req_addr;
+	     r_mem_req_store_data <= n_mem_req_store_data;
+	     r_mem_req_opcode <= n_mem_req_opcode;	     
 	  end
-     end
+     end // always_ff@ (posedge clk)
+   
 
    logic 			  drain_ds_complete;
    logic [(1<<`LG_ROB_ENTRIES)-1:0] dead_rob_mask;
 
    logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_rd_ptr, n_l1_mq_rd_ptr;
    logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_wr_ptr, n_l1_mq_wr_ptr;
-   logic 			    mq_empty, mq_full;
+
    /* verilator lint_off UNOPTFLAT */     
    logic 			    t_mq_ack_l1d, t_mq_ack_l1i;
 
@@ -457,7 +467,7 @@ module core_l1d_l1i(clk,
 	      );
 
    l1_miss_req_t r_l1_mq[(1<<LG_L1_MQ_ENTRIES) - 1:0];
-   l1_miss_req_t t_mq_head;
+
    
    
    always_comb
@@ -491,6 +501,11 @@ module core_l1d_l1i(clk,
 		  n_l1_mq_wr_ptr = r_l1_mq_wr_ptr + 'd1;
 	       end
 	  end // if (!mq_full)
+
+	if(t_pop_mq)
+	  begin
+	     n_l1_mq_rd_ptr = r_l1_mq_rd_ptr + 'd1;
+	  end
      end // always_comb
 
    always_ff@(posedge clk)
@@ -511,11 +526,18 @@ module core_l1d_l1i(clk,
 	r_l1_mq_wr_ptr <= reset ? 'd0 : n_l1_mq_wr_ptr;
      end
 
+   logic [31:0] r_cycle;
+   always_ff@(posedge clk)
+     begin
+	r_cycle <= reset ? 'd0 : (r_cycle + 32'd1);
+     end
+
    always_ff@(negedge clk)
      begin
 	if(!mq_empty)
 	  begin
-	     $display("head of mq addr %x",  t_mq_head.addr);
+	     $display("cycle %d : head of mq addr %x, is store %b, iside %b",  
+		      r_cycle, t_mq_head.addr, t_mq_head.is_store, t_mq_head.iside);
 	  end
      end
    	      

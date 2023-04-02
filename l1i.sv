@@ -716,6 +716,7 @@ endfunction // is_nop
 		    t_l1_miss.addr = r_cache_pc[`M_WIDTH-1:`LG_L1D_CL_LEN];
 		    t_l1_miss.data = 'd0;
 		    t_l1_miss.id = {1'b1, {`LG_ROB_ENTRIES{1'b0}}};
+		    t_l1_miss.iside = 1'b1;
 		    
 		    n_mem_req_addr = {r_cache_pc[`M_WIDTH-1:`LG_L1D_CL_LEN], {`LG_L1D_CL_LEN{1'b0}}};
 		    n_mem_req_valid = 1'b1;

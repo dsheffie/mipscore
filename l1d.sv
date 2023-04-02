@@ -1390,7 +1390,7 @@ endfunction
 			      t_l1_miss.id = {1'b0, r_req.rob_ptr};
 			      t_l1_miss.addr = {r_tag_out,r_cache_idx};
 			      t_l1_miss.data = t_data;
-			      
+			      t_l1_miss.iside = 1'b0;
 			      
 			      n_inhibit_write = 1'b1;
 			      t_miss_idx = r_cache_idx;
@@ -1436,6 +1436,7 @@ endfunction
 			    t_cache_idx = r_cache_idx;
 
 			    t_l1_miss.data = r_l1_miss.data;
+			    t_l1_miss.iside = 1'b0;
 			    
 			    if((rr_cache_idx == r_cache_idx) && rr_last_wr)
 			      begin
