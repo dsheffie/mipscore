@@ -181,6 +181,11 @@ module l1i(clk,
 	   //reply from memory system
 	   mem_rsp_valid,
 	   mem_rsp_load_data,
+
+	   l1_miss,
+	   l1_miss_req,
+	   l1_miss_ack,
+	   
 	   cache_accesses,
 	   cache_hits
 	   );
@@ -243,6 +248,12 @@ module l1i(clk,
    output logic [3:0] 			  mem_req_opcode;
    input logic 				  mem_rsp_valid;
    input logic [L1I_CL_LEN_BITS-1:0] 	  mem_rsp_load_data;
+
+   output 				  l1_miss_req_t l1_miss;
+   output logic 			  l1_miss_req;
+   input logic 				  l1_miss_ack;
+
+   
    output logic [63:0] 			  cache_accesses;
    output logic [63:0] 			  cache_hits;
       
@@ -299,6 +310,8 @@ module l1i(clk,
    
 
    logic [LG_WORDS_PER_CL-1:0] 	     t_insn_idx;
+
+   l1_miss_req_t t_l1_miss, r_l1_miss;
    
    logic [63:0] 			 n_cache_accesses, r_cache_accesses;
    logic [63:0] 			 n_cache_hits, r_cache_hits;
@@ -339,14 +352,15 @@ endfunction // is_nop
       
       
    
-   typedef enum logic [2:0] {INITIALIZE = 'd0,
+   typedef enum logic [3:0] {INITIALIZE = 'd0,
 			     IDLE = 'd1,
                              ACTIVE = 'd2,
                              INJECT_RELOAD = 'd3,
-			     RELOAD_TURNAROUND = 'd4,
-                             FLUSH_CACHE = 'd5,
-			     WAIT_FOR_NOT_FULL = 'd6,
-			     INIT_PHT = 'd7
+			     WAIT_FOR_ACK = 'd4,
+			     RELOAD_TURNAROUND = 'd5,
+                             FLUSH_CACHE = 'd6,
+			     WAIT_FOR_NOT_FULL = 'd7,
+			     INIT_PHT = 'd8
 			    } state_t;
    
    logic [(`M_WIDTH-1):0] r_pc, n_pc, r_miss_pc, n_miss_pc;
@@ -413,6 +427,7 @@ endfunction // is_nop
    assign mem_req_opcode = MEM_LW;
    assign cache_hits = r_cache_hits;
    assign cache_accesses = r_cache_accesses;
+   assign l1_miss = t_l1_miss;
    
    always_comb
      begin
@@ -482,6 +497,11 @@ endfunction // is_nop
 	  end
      end // always_comb
 
+   always_ff@(posedge clk)
+     begin
+	r_l1_miss <= t_l1_miss;
+     end
+   
    always_ff@(posedge clk)
      begin
 	if(t_push_insn)
@@ -630,6 +650,8 @@ endfunction // is_nop
 	t_is_ret = 1'b0;
 	t_init_pht = 1'b0;
 	n_init_pht_idx = r_init_pht_idx;
+	l1_miss_req = 1'b0;
+	t_l1_miss = r_l1_miss;
 	
 	case(r_state)
 	  INITIALIZE:
@@ -688,9 +710,17 @@ endfunction // is_nop
 		 end // if (n_restart_req)
 	       else if(t_miss)
 		 begin
-		    n_state = INJECT_RELOAD;
+		    l1_miss_req = 1'b1;		    		    
+		    n_state = l1_miss_ack ? INJECT_RELOAD : WAIT_FOR_ACK;
+		    t_l1_miss.is_store = 1'b0;
+		    t_l1_miss.addr = r_cache_pc[`M_WIDTH-1:`LG_L1D_CL_LEN];
+		    t_l1_miss.data = 'd0;
+		    t_l1_miss.id = {1'b1, {`LG_ROB_ENTRIES{1'b0}}};
+		    
 		    n_mem_req_addr = {r_cache_pc[`M_WIDTH-1:`LG_L1D_CL_LEN], {`LG_L1D_CL_LEN{1'b0}}};
 		    n_mem_req_valid = 1'b1;
+
+		    
 		    n_miss_pc = r_cache_pc;
 		    n_pc = r_pc;
 		 end
@@ -829,6 +859,14 @@ endfunction // is_nop
 		    n_pc = r_pc;
 		    n_miss_pc = r_cache_pc;
 		    n_state = WAIT_FOR_NOT_FULL;
+		 end
+	    end // case: ACTIVE
+	  WAIT_FOR_ACK:
+	    begin
+	       l1_miss_req = 1'b1;
+	       if(l1_miss_ack)
+		 begin
+		    n_state = INJECT_RELOAD;
 		 end
 	    end
 	  INJECT_RELOAD:

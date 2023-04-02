@@ -357,11 +357,12 @@ module core_l1d_l1i(clk,
    logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_rd_ptr, n_l1_mq_rd_ptr;
    logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_wr_ptr, n_l1_mq_wr_ptr;
    logic 			    mq_empty, mq_full;
+   /* verilator lint_off UNOPTFLAT */     
    logic 			    t_mq_ack_l1d, t_mq_ack_l1i;
 
-   l1_miss_req_t t_l1d_miss;
+   l1_miss_req_t t_l1d_miss, t_l1i_miss;
    /* verilator lint_off UNOPTFLAT */  
-   wire 			    w_l1d_miss_req;
+   wire 			    w_l1d_miss_req, w_l1i_miss_req;
    
    
 
@@ -406,7 +407,7 @@ module core_l1d_l1i(clk,
 
 	       .l1_miss(t_l1d_miss),
 	       .l1_miss_req(w_l1d_miss_req),
-	       .l1_miss_ack(w_mq_ack_l1d),
+	       .l1_miss_ack(t_mq_ack_l1d),
 	       
 	       
 	       .cache_accesses(t_l1d_cache_accesses),
@@ -446,6 +447,11 @@ module core_l1d_l1i(clk,
 	      .mem_req_opcode(l1i_mem_req_opcode),
 	      .mem_rsp_valid(l1i_mem_rsp_valid),
 	      .mem_rsp_load_data(mem_rsp_load_data),
+	      
+	      .l1_miss(t_l1i_miss),
+	      .l1_miss_req(w_l1i_miss_req),
+	      .l1_miss_ack(t_mq_ack_l1i),
+	      
 	      .cache_accesses(t_l1i_cache_accesses),
 	      .cache_hits(t_l1i_cache_hits)	      
 	      );
@@ -453,10 +459,6 @@ module core_l1d_l1i(clk,
    l1_miss_req_t r_l1_mq[(1<<LG_L1_MQ_ENTRIES) - 1:0];
    l1_miss_req_t t_mq_head;
    
-   wire 			    w_mq_full = (r_l1_mq_rd_ptr!=r_l1_mq_wr_ptr) &&
-				    (r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0] == r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]);
-
-   wire 			    w_mq_ack_l1d = !w_mq_full && w_l1d_miss_req;
    
    always_comb
      begin
@@ -468,24 +470,38 @@ module core_l1d_l1i(clk,
 	mq_empty = r_l1_mq_rd_ptr==r_l1_mq_wr_ptr;
 	
 	mq_full = (r_l1_mq_rd_ptr!=r_l1_mq_wr_ptr) &&
-		  (r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0] == r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]);
+		  (r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0] == 
+		   r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]);
 
 	t_mq_head = r_l1_mq[r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0]];
 	
 	if(!mq_full)
 	  begin
-	     if(w_l1d_miss_req)
+	     if(w_l1i_miss_req)
+	       begin
+		  t_mq_ack_l1i = 1'b1;
+	       end
+	     else if(w_l1d_miss_req)
+	       begin
+		  t_mq_ack_l1d = 1'b1;
+	       end
+
+	     if(w_l1i_miss_req||w_l1d_miss_req)
 	       begin
 		  n_l1_mq_wr_ptr = r_l1_mq_wr_ptr + 'd1;
 	       end
-	  end
+	  end // if (!mq_full)
      end // always_comb
 
    always_ff@(posedge clk)
      begin
-	if(w_mq_ack_l1d)
+	if(t_mq_ack_l1d)
 	  begin
 	     r_l1_mq[r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]] <= t_l1d_miss;
+	  end
+	else if(t_mq_ack_l1i)
+	  begin
+	     r_l1_mq[r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]] <= t_l1i_miss;
 	  end
      end
 
