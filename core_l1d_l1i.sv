@@ -209,6 +209,10 @@ module core_l1d_l1i(clk,
 		 begin
 		    n_flush_state = FLUSH_IDLE;
 		    n_flush = 1'b0;
+		    if(!mq_empty)
+		      begin
+			 $stop();
+		      end
 		 end
 	    end
 	  GOT_L1D:
@@ -217,6 +221,10 @@ module core_l1d_l1i(clk,
 		 begin
 		    n_flush_state = FLUSH_IDLE;
 		    n_flush = 1'b0;
+		    if(!mq_empty)
+		      begin
+			 $stop();
+		      end
 		 end
 	    end
 	  GOT_L1I:
@@ -225,6 +233,10 @@ module core_l1d_l1i(clk,
 		 begin
 		    n_flush_state = FLUSH_IDLE;
 		    n_flush = 1'b0;
+		    if(!mq_empty)
+		      begin
+			 $stop();
+		      end
 		 end
 	    end
 	endcase // case (r_flush_state)
@@ -269,20 +281,21 @@ module core_l1d_l1i(clk,
    logic [`M_WIDTH-1:0] 		  r_mem_req_addr, n_mem_req_addr;
    logic [L1D_CL_LEN_BITS-1:0] 		  r_mem_req_store_data, n_mem_req_store_data;;
    logic [3:0] 				  r_mem_req_opcode, n_mem_req_opcode;
-
+   logic 				  n_is_flush, r_is_flush;
    
    
-   always_ff@(negedge clk)
-     begin
-	if(mem_rsp_valid)
-	  begin
-	     $display("return data %x,%x,%x,%x", 
-		      mem_rsp_load_data[127:96],
-		      mem_rsp_load_data[95:64],
-		      mem_rsp_load_data[63:32],
-		      mem_rsp_load_data[31:0]);
-	  end
-     end
+   
+   // always_ff@(negedge clk)
+   //   begin
+   // 	if(mem_rsp_valid)
+   // 	  begin
+   // 	     $display("return data %x,%x,%x,%x", 
+   // 		      mem_rsp_load_data[127:96],
+   // 		      mem_rsp_load_data[95:64],
+   // 		      mem_rsp_load_data[63:32],
+   // 		      mem_rsp_load_data[31:0]);
+   // 	  end
+   //   end
    
    always_comb
      begin
@@ -301,6 +314,7 @@ module core_l1d_l1i(clk,
 	
 	l1d_mem_rsp_valid = 1'b0;
 	l1i_mem_rsp_valid = 1'b0;
+	n_is_flush = r_is_flush;
 	
 	case(r_state)
 	  IDLE:
@@ -310,6 +324,7 @@ module core_l1d_l1i(clk,
 		    n_mem_req_addr = {t_mq_head.addr, 4'd0};
 		    n_mem_req_store_data = t_mq_head.data;
 		    n_mem_req_opcode = t_mq_head.is_store ? MEM_SW : MEM_LW;
+		    n_is_flush = t_mq_head.is_flush;
 		    
 		    t_pop_mq = 1'b1;
 		    n_req = 1'b1;
@@ -322,7 +337,7 @@ module core_l1d_l1i(clk,
 		 begin
 		    n_req = 1'b0;
 		    n_state = IDLE;
-		    l1d_mem_rsp_valid = 1'b1;
+		    l1d_mem_rsp_valid = !r_is_flush;//1'b1;
 		 end
 	    end // case: GNT_L1D
          GNT_L1I:
@@ -349,6 +364,7 @@ module core_l1d_l1i(clk,
 	     r_mem_req_addr <= 'd0;
 	     r_mem_req_store_data <= 'd0;
 	     r_mem_req_opcode <= 'd0;
+	     r_is_flush <= 1'b0;
 	  end
 	else
 	  begin
@@ -356,7 +372,8 @@ module core_l1d_l1i(clk,
 	     r_req <= n_req;
 	     r_mem_req_addr <= n_mem_req_addr;
 	     r_mem_req_store_data <= n_mem_req_store_data;
-	     r_mem_req_opcode <= n_mem_req_opcode;	     
+	     r_mem_req_opcode <= n_mem_req_opcode;	  
+	     r_is_flush <= n_is_flush;
 	  end
      end // always_ff@ (posedge clk)
    
@@ -418,7 +435,7 @@ module core_l1d_l1i(clk,
 	       .l1_miss(t_l1d_miss),
 	       .l1_miss_req(w_l1d_miss_req),
 	       .l1_miss_ack(t_mq_ack_l1d),
-	       
+	       .l1_mq_empty(mq_empty),
 	       
 	       .cache_accesses(t_l1d_cache_accesses),
 	       .cache_hits(t_l1d_cache_hits)
@@ -532,14 +549,18 @@ module core_l1d_l1i(clk,
 	r_cycle <= reset ? 'd0 : (r_cycle + 32'd1);
      end
 
-   always_ff@(negedge clk)
-     begin
-	if(!mq_empty)
-	  begin
-	     $display("cycle %d : head of mq addr %x, is store %b, iside %b",  
-		      r_cycle, t_mq_head.addr, t_mq_head.is_store, t_mq_head.iside);
-	  end
-     end
+   // always_ff@(negedge clk)
+   //   begin
+   // 	if(!mq_empty)
+   // 	  begin
+   // 	     $display("cycle %d : head of mq addr %x, is store %b, iside %b, flush %b",  
+   // 		      r_cycle,
+   // 		      {t_mq_head.addr,4'd0}, 
+   // 		      t_mq_head.is_store,
+   // 		      t_mq_head.iside,
+   // 		      t_mq_head.is_flush);
+   // 	  end
+   //   end
    	      
    core cpu (
 	     .clk(clk),

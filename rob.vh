@@ -85,6 +85,7 @@ typedef struct packed {
 
 typedef struct packed {
    logic       is_store;
+   logic       is_flush;
    logic       iside;
    logic [`LG_ROB_ENTRIES:0] id;
    logic [((1<<`LG_L1D_CL_LEN)*8)-1:0] data;

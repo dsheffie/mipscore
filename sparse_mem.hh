@@ -63,6 +63,9 @@ public:
     assert(byte_addr < 1UL<<32);
     return *reinterpret_cast<T*>(mem+byte_addr);
   }
+  uint32_t get32(uint64_t byte_addr) {
+    return get<uint32_t>(byte_addr);
+  }
   template<typename T>
   void set(uint64_t byte_addr, T v) {
     assert(byte_addr < 1UL<<32);
