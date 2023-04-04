@@ -1100,7 +1100,7 @@ int main(int argc, char **argv) {
 	  uint64_t ea = (tb->mem_req_addr + 4*i) & ((1UL<<32)-1);
 	  //std::cout << "\t" <<  std::hex
 	  //<< tb->mem_req_store_data[i] << std::dec << "\n";
-	  if(ss->mem.get32(ea) != tb->mem_req_store_data[i]) {
+	  if(enable_checker && (ss->mem.get32(ea) != tb->mem_req_store_data[i])) {
 	    std::cout << "writeback mismatch!\n";
 	    exit(-1);
 	  }

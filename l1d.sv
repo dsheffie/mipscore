@@ -269,6 +269,9 @@ endfunction
 			     ACTIVE,
                              INJECT_RELOAD,
 			     WAIT_INJECT_RELOAD,
+                             STORE_INJECT_RELOAD,
+			     STORE_WAIT_INJECT_RELOAD,
+			     STORE_WAIT_FOR_ACK,
                              FLUSH_CACHE,
                              FLUSH_CACHE_WAIT,
 			     FLUSH_CACHE_WAIT_FOR_ACK,
@@ -1406,13 +1409,13 @@ endfunction
 				begin
 				   //$display("inflight write to line, must wait");
 				   t_cache_idx = r_cache_idx;
-				   n_state = WAIT_INJECT_RELOAD;
+				   n_state = STORE_WAIT_INJECT_RELOAD;
 				   n_mem_req_valid = 1'b0;				   
 				end
 			      else
 				begin
 				   //$display("no wait");
-				   n_state = l1_miss_ack ? INJECT_RELOAD : WAIT_FOR_ACK;
+				   n_state = l1_miss_ack ? STORE_INJECT_RELOAD : STORE_WAIT_FOR_ACK;
 				   l1_miss_req = 1'b1;
 				   
 				   n_mem_req_valid = 1'b1;
@@ -1620,7 +1623,7 @@ endfunction
 		 begin
 		    n_state = INJECT_RELOAD;
 		 end
-	    end
+	    end	  
 	  INJECT_RELOAD:
 	    begin
 	       	if(mem_rsp_valid)
@@ -1629,7 +1632,37 @@ endfunction
 		     n_inhibit_write = 1'b0;
 		     n_reload_issue = 1'b0;
 		  end
+	    end	  
+
+
+	  STORE_WAIT_INJECT_RELOAD:
+	    begin
+	       n_mem_req_valid = 1'b1;
+	       l1_miss_req = 1'b1;	       
+	       n_state = l1_miss_ack ? STORE_INJECT_RELOAD : STORE_WAIT_FOR_ACK;
+	       n_mem_req_store_data = t_data;
+	       t_l1_miss.data = t_data;
 	    end
+	  STORE_WAIT_FOR_ACK:
+	    begin
+	       l1_miss_req = 1'b1;
+	       if(l1_miss_ack)
+		 begin
+		    n_state = STORE_INJECT_RELOAD;
+		 end
+	    end	  
+	  STORE_INJECT_RELOAD:
+	    begin
+	       	if(mem_rsp_valid)
+		  begin
+		     n_state = r_reload_issue ? HANDLE_RELOAD : ACTIVE;
+		     n_inhibit_write = 1'b0;
+		     n_reload_issue = 1'b0;
+		  end
+	    end	  
+
+	  
+
 	  HANDLE_RELOAD:
 	    begin
 	       t_cache_idx = r_req.addr[IDX_STOP-1:IDX_START];
@@ -1644,6 +1677,7 @@ endfunction
 	    end
 	  FLUSH_CL:
 	    begin
+	       $stop();
 	       if(r_dirty_out)
 		 begin
 		    n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
@@ -1727,11 +1761,8 @@ endfunction
 	  FLUSH_CACHE_WAIT:
 	    begin
 	       t_cache_idx = r_cache_idx;
-	       //if(mem_rsp_valid)
-	       //begin
 	       n_state = FLUSH_CACHE;
 	       n_inhibit_write = 1'b0;
-	       //end
 	    end
 	  default:
 	    begin
