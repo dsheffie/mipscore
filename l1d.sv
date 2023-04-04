@@ -1388,7 +1388,7 @@ endfunction
 			 n_inhibit_write = 1'b1;
 			 if(r_hit_busy_addr && r_is_retry || !r_hit_busy_addr)
 			   begin
-			      n_reload_issue = 1'b1;
+			      //n_reload_issue = 1'b1;
 			      n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
 			      n_mem_req_opcode = MEM_SW;
 			      n_mem_req_store_data = t_data;
@@ -1415,9 +1415,10 @@ endfunction
 			      else
 				begin
 				   //$display("no wait");
-				   n_state = l1_miss_ack ? STORE_INJECT_RELOAD : STORE_WAIT_FOR_ACK;
+				   n_state = l1_miss_ack ? STORE_INJECT_RELOAD : 
+					     STORE_WAIT_FOR_ACK;
 				   l1_miss_req = 1'b1;
-				   
+				   t_cache_idx = r_cache_idx;
 				   n_mem_req_valid = 1'b1;
 				end
 			   end // if (!t_stall_for_busy)
@@ -1637,6 +1638,8 @@ endfunction
 
 	  STORE_WAIT_INJECT_RELOAD:
 	    begin
+	       t_cache_idx = r_cache_idx;
+	       
 	       n_mem_req_valid = 1'b1;
 	       l1_miss_req = 1'b1;	       
 	       n_state = l1_miss_ack ? STORE_INJECT_RELOAD : STORE_WAIT_FOR_ACK;
@@ -1646,6 +1649,7 @@ endfunction
 	  STORE_WAIT_FOR_ACK:
 	    begin
 	       l1_miss_req = 1'b1;
+	       t_cache_idx = r_cache_idx;	       
 	       if(l1_miss_ack)
 		 begin
 		    n_state = STORE_INJECT_RELOAD;
@@ -1653,12 +1657,16 @@ endfunction
 	    end	  
 	  STORE_INJECT_RELOAD:
 	    begin
-	       	if(mem_rsp_valid)
-		  begin
-		     n_state = r_reload_issue ? HANDLE_RELOAD : ACTIVE;
-		     n_inhibit_write = 1'b0;
-		     n_reload_issue = 1'b0;
-		  end
+	       if(!r_reload_issue) $stop();
+	       
+	       //if(mem_rsp_valid)
+	       //begin
+	       t_cache_idx = r_cache_idx;	       
+	       n_state = HANDLE_RELOAD;
+	       n_inhibit_write = 1'b0;
+	       n_reload_issue = 1'b0;
+	       t_mark_invalid = 1'b1;
+	       //end
 	    end	  
 
 	  

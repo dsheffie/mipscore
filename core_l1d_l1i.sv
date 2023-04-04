@@ -282,6 +282,7 @@ module core_l1d_l1i(clk,
    logic [L1D_CL_LEN_BITS-1:0] 		  r_mem_req_store_data, n_mem_req_store_data;;
    logic [3:0] 				  r_mem_req_opcode, n_mem_req_opcode;
    logic 				  n_is_flush, r_is_flush;
+   logic 				  n_is_store, r_is_store;
    
    
    
@@ -315,6 +316,7 @@ module core_l1d_l1i(clk,
 	l1d_mem_rsp_valid = 1'b0;
 	l1i_mem_rsp_valid = 1'b0;
 	n_is_flush = r_is_flush;
+	n_is_store = r_is_store;
 	
 	case(r_state)
 	  IDLE:
@@ -325,7 +327,7 @@ module core_l1d_l1i(clk,
 		    n_mem_req_store_data = t_mq_head.data;
 		    n_mem_req_opcode = t_mq_head.is_store ? MEM_SW : MEM_LW;
 		    n_is_flush = t_mq_head.is_flush;
-		    
+		    n_is_store = t_mq_head.is_store;
 		    t_pop_mq = 1'b1;
 		    n_req = 1'b1;
 		    n_state = t_mq_head.iside ? GNT_L1I : GNT_L1D;
@@ -337,7 +339,7 @@ module core_l1d_l1i(clk,
 		 begin
 		    n_req = 1'b0;
 		    n_state = IDLE;
-		    l1d_mem_rsp_valid = !r_is_flush;//1'b1;
+		    l1d_mem_rsp_valid = !r_is_store;//1'b1;
 		 end
 	    end // case: GNT_L1D
          GNT_L1I:
@@ -365,6 +367,7 @@ module core_l1d_l1i(clk,
 	     r_mem_req_store_data <= 'd0;
 	     r_mem_req_opcode <= 'd0;
 	     r_is_flush <= 1'b0;
+	     r_is_store <= 1'b0;
 	  end
 	else
 	  begin
@@ -374,6 +377,7 @@ module core_l1d_l1i(clk,
 	     r_mem_req_store_data <= n_mem_req_store_data;
 	     r_mem_req_opcode <= n_mem_req_opcode;	  
 	     r_is_flush <= n_is_flush;
+	     r_is_store <= n_is_store;
 	  end
      end // always_ff@ (posedge clk)
    

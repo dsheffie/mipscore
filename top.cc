@@ -1094,8 +1094,7 @@ int main(int argc, char **argv) {
 	++n_loads;
       }
       else if(tb->mem_req_opcode == 7) { /* store word */
-	//std::cout << "store to " << std::hex << tb->mem_req_addr
-	//<< std::dec << "\n";
+	//std::cout << "store to " << std::hex << tb->mem_req_addr << std::dec << "\n";
 	for(int i = 0; i < 4; i++) {
 	  uint64_t ea = (tb->mem_req_addr + 4*i) & ((1UL<<32)-1);
 	  //std::cout << "\t" <<  std::hex
