@@ -44,7 +44,7 @@ module core_l1d_l1i(clk,
 
    localparam L1D_CL_LEN = 1 << `LG_L1D_CL_LEN;
    localparam L1D_CL_LEN_BITS = 1 << (`LG_L1D_CL_LEN + 3);
-   localparam LG_L1_MQ_ENTRIES = 2;
+
         
    input logic clk;
    input logic reset;
@@ -385,8 +385,8 @@ module core_l1d_l1i(clk,
    logic 			  drain_ds_complete;
    logic [(1<<`LG_ROB_ENTRIES)-1:0] dead_rob_mask;
 
-   logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_rd_ptr, n_l1_mq_rd_ptr;
-   logic [LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_wr_ptr, n_l1_mq_wr_ptr;
+   logic [`LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_rd_ptr, n_l1_mq_rd_ptr;
+   logic [`LG_L1_MQ_ENTRIES:0] 	    r_l1_mq_wr_ptr, n_l1_mq_wr_ptr;
 
    /* verilator lint_off UNOPTFLAT */     
    logic 			    t_mq_ack_l1d, t_mq_ack_l1i;
@@ -487,7 +487,7 @@ module core_l1d_l1i(clk,
 	      .cache_hits(t_l1i_cache_hits)	      
 	      );
 
-   l1_miss_req_t r_l1_mq[(1<<LG_L1_MQ_ENTRIES) - 1:0];
+   l1_miss_req_t r_l1_mq[(1<<`LG_L1_MQ_ENTRIES) - 1:0];
 
    
    
@@ -501,10 +501,10 @@ module core_l1d_l1i(clk,
 	mq_empty = r_l1_mq_rd_ptr==r_l1_mq_wr_ptr;
 	
 	mq_full = (r_l1_mq_rd_ptr!=r_l1_mq_wr_ptr) &&
-		  (r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0] == 
-		   r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]);
+		  (r_l1_mq_rd_ptr[`LG_L1_MQ_ENTRIES-1:0] == 
+		   r_l1_mq_wr_ptr[`LG_L1_MQ_ENTRIES-1:0]);
 
-	t_mq_head = r_l1_mq[r_l1_mq_rd_ptr[LG_L1_MQ_ENTRIES-1:0]];
+	t_mq_head = r_l1_mq[r_l1_mq_rd_ptr[`LG_L1_MQ_ENTRIES-1:0]];
 	
 	if(!mq_full)
 	  begin
@@ -533,11 +533,11 @@ module core_l1d_l1i(clk,
      begin
 	if(t_mq_ack_l1d)
 	  begin
-	     r_l1_mq[r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]] <= t_l1d_miss;
+	     r_l1_mq[r_l1_mq_wr_ptr[`LG_L1_MQ_ENTRIES-1:0]] <= t_l1d_miss;
 	  end
 	else if(t_mq_ack_l1i)
 	  begin
-	     r_l1_mq[r_l1_mq_wr_ptr[LG_L1_MQ_ENTRIES-1:0]] <= t_l1i_miss;
+	     r_l1_mq[r_l1_mq_wr_ptr[`LG_L1_MQ_ENTRIES-1:0]] <= t_l1i_miss;
 	  end
      end
 

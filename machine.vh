@@ -34,6 +34,9 @@
 
 `define LG_RET_STACK_ENTRIES 2
 
+//l1 miss queue size
+`define LG_L1_MQ_ENTRIES 2
+
 /* non-uop queue */
 `define LG_UQ_ENTRIES 3
 /* mem uop queue */
