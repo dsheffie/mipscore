@@ -646,7 +646,7 @@ int main(int argc, char **argv) {
   tb->clk = 0;
   tb->eval();
   //done with initialize
-  globals::cycle = 0;  
+  fault_start_cycle = globals::cycle = 0;  
 
   //std::cout << getAsmString(get_insn(0xa45b0, s), 0xa45b0) << "\n";
   
@@ -1299,6 +1299,11 @@ int main(int argc, char **argv) {
     for(auto &p : fault_to_restart_distribution) {
       out << p.first << " cycles before restart, " << p.second << " times\n";
     }
+    int m_restart = 0;
+    double a_restart = histo_mean_median(fault_to_restart_distribution, m_restart);
+    out << m_restart << " median cycles from fault to restart\n";
+    out << a_restart << " avg cycles from fault to restart\n";
+    
     dump_histo(branch_name, mispredicts, s);
     uint64_t total_pushout = 0;
     for(auto &p : pushout_histo) {

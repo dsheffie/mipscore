@@ -1509,6 +1509,8 @@ module core(clk,
 	t_rob_tail.old_pdst  = 'd0;
 	t_rob_tail.pc = t_alloc_uop.pc;
 	t_rob_tail.target_pc = 'd0;
+	t_rob_tail.bob_id = r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0];
+
 	
 	t_rob_tail.is_call = t_alloc_uop.op == JAL || t_alloc_uop.op == JALR || t_alloc_uop.op == BAL;
 	t_rob_tail.is_ret = (t_alloc_uop.op == JR) && (t_uop.srcA == 'd31);
@@ -1530,7 +1532,8 @@ module core(clk,
 	t_rob_next_tail.old_pdst  = 'd0;
 	t_rob_next_tail.pc = t_alloc_uop2.pc;
 	t_rob_next_tail.target_pc = 'd0;
-
+	t_rob_next_tail.bob_id = r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0];
+		
 	t_rob_next_tail.is_call = t_alloc_uop2.op == JAL || t_alloc_uop2.op == JALR || t_alloc_uop2.op == BAL;
 	t_rob_next_tail.is_ret = (t_alloc_uop2.op == JR) && (t_uop.srcA == 'd31);
 	t_rob_next_tail.is_break  = (t_alloc_uop2.op == BREAK);
@@ -1886,19 +1889,28 @@ module core(clk,
 	     if(t_alloc && !t_alloc_two && t_uop.is_br)
 	       begin
 		  n_bob_tail_ptr = r_bob_tail_ptr + 'd1;
+		  //$display("bump tail ptr case - one alloc");
 	       end
 	     else if(t_alloc && t_alloc_two && (t_uop.is_br || t_uop2.is_br))
 	       begin
 		  n_bob_tail_ptr = r_bob_tail_ptr + 'd1;
+		  //$display("bump tail ptr case - two alloc");
 	       end
 
 	     //can only retire one branch per cycle
 	     if((t_retire || t_bump_rob_head) && t_rob_head.is_br)
 	       begin
-		  //$display("cycle %d popped head of bob, r_bob ptr =%d, rob ptr = %d",
-		  //r_cycle,
-		  //r_bob[r_bob_head_ptr[`LG_BOB_ENTRIES-1:0]].rob_ptr,
-		  //r_rob_head_ptr[`LG_ROB_ENTRIES-1:0]);
+		  // $display("cycle %d popped head of bob, r_bob ptr =%d, rob ptr = %d, rob bob id = %d, bob ptr = %d",
+		  // 	   r_cycle,
+		  // 	   r_bob[r_bob_head_ptr[`LG_BOB_ENTRIES-1:0]].rob_ptr,
+		  // 	   r_rob_head_ptr[`LG_ROB_ENTRIES-1:0],
+		  // 	   t_rob_head.bob_id, 
+		  // 	   r_bob_head_ptr[`LG_BOB_ENTRIES-1:0]);
+
+		  // if(t_rob_head.bob_id != r_bob_head_ptr[`LG_BOB_ENTRIES-1:0])
+		  //   begin
+		  //      $stop();
+		  //   end
 		  n_bob_head_ptr = r_bob_head_ptr + 'd1;
 	       end
 	     else if(t_retire_two && t_rob_next_head.is_br)

@@ -26,6 +26,7 @@ typedef struct packed {
    logic [31:0] 		 data;
    logic [`LG_PHT_SZ-1:0] 	 pht_idx;
 
+   logic [`LG_BOB_ENTRIES-1:0] 	 bob_id;
 `ifdef ENABLE_CYCLE_ACCOUNTING
    logic [63:0] 	    fetch_cycle;
    logic [63:0] 	    alloc_cycle;
