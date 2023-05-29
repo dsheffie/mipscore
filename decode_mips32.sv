@@ -46,15 +46,12 @@ module decode_mips32(insn,
 	uop.dst = 'd0;
 	uop.srcA_valid = 1'b0;
 	uop.srcB_valid = 1'b0;
-	uop.fp_srcA_valid = 1'b0;
-	uop.fp_srcB_valid = 1'b0;
 	uop.hilo_dst_valid = 1'b0;
 	uop.hilo_src_valid = 1'b0;
 	uop.hilo_dst = 'd0;
 	uop.hilo_src = 'd0;
 	
 	uop.dst_valid = 1'b0;
-	uop.fp_dst_valid = 1'b0;
 	
 	uop.has_delay_slot = 1'b0;
 	uop.has_nullifying_delay_slot = 1'b0;
@@ -70,6 +67,8 @@ module decode_mips32(insn,
 	uop.is_mem = 1'b0;
 	uop.is_int = 1'b0;
 	uop.is_store = 1'b0;
+	uop.bob_id = 'd0;
+	uop.branch_mask = 'd0;
 `ifdef ENABLE_CYCLE_ACCOUNTING
 	uop.fetch_cycle = fetch_cycle;
 `endif
@@ -625,7 +624,6 @@ module decode_mips32(insn,
 		    uop.op = MFC1_MERGE;
 		    uop.srcB = {{ZP{1'b0}}, rd[4:1], 1'b0};
 		    uop.jmp_imm = { {(`M_WIDTH-17){1'b0}}, rd[0]};
-		    uop.fp_srcB_valid = 1'b1;
 		    uop.is_mem = 1'b1;
 		 end
 	       else if((insn[25:21]==5'd4) && (insn[10:0] == 11'd0))
@@ -636,8 +634,6 @@ module decode_mips32(insn,
 		    uop.dst = {{ZP{1'b0}}, rd[4:1], 1'b0};
 		    uop.srcB = {{ZP{1'b0}}, rd[4:1], 1'b0};
 		    uop.jmp_imm = { {(`M_WIDTH-17){1'b0}}, rd[0]};
-		    uop.fp_srcB_valid = 1;			 
-		    uop.fp_dst_valid = 1'b1;
 		    uop.is_mem = 1'b1;
 		 end // if ((insn[25:21]==5'd4) && (insn[10:0] == 11'd0))
 	    end // case: 6'd17

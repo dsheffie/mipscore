@@ -203,7 +203,7 @@ module core(clk,
    
    localparam N_DQ_ENTRIES = (1<<`LG_DQ_ENTRIES);
    localparam HI_EBITS = `M_WIDTH-32;
-
+   
    logic 				  t_push_dq_one, t_push_dq_two;
    
    uop_t r_dq[N_DQ_ENTRIES-1:0];
@@ -265,8 +265,14 @@ module core(clk,
    logic [`LG_BOB_ENTRIES:0] r_bob_head_ptr, n_bob_head_ptr;
    logic [`LG_BOB_ENTRIES:0] r_bob_tail_ptr, n_bob_tail_ptr;
    logic 		     t_bob_empty, t_bob_full;
-      
-         
+
+   
+   logic [N_BOB_ENTRIES-1:0] r_faulted_branch_mask, n_faulted_branch_mask;
+   logic [N_BOB_ENTRIES-1:0] r_inflight_branch_mask, n_inflight_branch_mask;
+   logic [N_BOB_ENTRIES-1:0] t_inflight_branch_mask;
+   logic [N_BOB_ENTRIES-1:0] r_prev_inflight_branch_mask, n_prev_inflight_branch_mask;
+   
+            
    logic [`LG_PRF_ENTRIES-1:0] r_alloc_rat[31:0];
    logic [`LG_PRF_ENTRIES-1:0] n_alloc_rat[31:0];
    logic [`LG_PRF_ENTRIES-1:0] r_retire_rat[31:0];
@@ -291,6 +297,7 @@ module core(clk,
    logic 		     t_fold_uop, t_fold_uop2;
    
    logic 		     n_in_delay_slot, r_in_delay_slot;
+   logic 		     t_uop0_in_delay_slot, t_uop1_in_delay_slot;
    
    logic 		     t_clr_dq;
    logic 		     t_enough_bob;
@@ -566,7 +573,16 @@ module core(clk,
 	     r_cause <= n_cause;
 	     r_pending_fault <= n_pending_fault;
 	  end
-     end
+     end // always_ff@ (posedge clk)
+
+   // always_ff@(negedge clk)
+   //   begin
+   // 	if(|r_faulted_branch_mask)
+   // 	  begin
+   // 	     $display("cycle %d, fault mask %b", r_cycle, r_faulted_branch_mask);
+   // 	  end
+
+   //   end
 
    always_ff@(posedge clk)
      begin
@@ -841,7 +857,9 @@ module core(clk,
 	n_l1i_flush_complete = r_l1i_flush_complete || l1i_flush_complete;
 	n_l1d_flush_complete = r_l1d_flush_complete || l1d_flush_complete;
 	n_l2_flush_complete = r_l2_flush_complete || l2_flush_complete;
-	
+
+	t_uop1_in_delay_slot = t_uop.has_delay_slot && t_alloc && t_alloc_two;
+	t_uop0_in_delay_slot = r_in_delay_slot;
 	
 	if(r_state == ACTIVE)
 	  begin
@@ -1258,11 +1276,23 @@ module core(clk,
 	    end
 	endcase // unique case (r_state)
 
+	
 	if(t_alloc)
 	  begin
-	     n_in_delay_slot = t_alloc_two ? t_uop2.has_delay_slot
-			       : t_uop.has_delay_slot;
-	  end
+	     if(t_uop.has_delay_slot)
+	       begin
+		  n_in_delay_slot = !t_alloc_two;
+	       end
+	     else if(t_uop2.has_delay_slot && t_alloc_two)
+	       begin
+		  n_in_delay_slot = 1'b1;
+	       end
+	     else
+	       begin
+		  n_in_delay_slot = 1'b0;
+	       end
+	  end // if (t_alloc)
+	
 	
 	else if(t_clr_dq || t_clr_rob)
 	  begin
@@ -1282,6 +1312,9 @@ module core(clk,
 	     r_rob_next_tail_ptr <= 'd1;
 	     r_bob_head_ptr <= 'd0;
 	     r_bob_tail_ptr <= 'd0;
+	     r_inflight_branch_mask <= 'd0;
+	     r_faulted_branch_mask <= 'd0;
+	     r_prev_inflight_branch_mask <= 'd0;
 	  end
 	else
 	  begin
@@ -1291,6 +1324,9 @@ module core(clk,
 	     r_rob_next_tail_ptr <= n_rob_next_tail_ptr;
 	     r_bob_head_ptr <= n_bob_head_ptr;
 	     r_bob_tail_ptr <= n_bob_tail_ptr;
+	     r_inflight_branch_mask <= n_inflight_branch_mask;
+	     r_faulted_branch_mask <= n_faulted_branch_mask;
+	     r_prev_inflight_branch_mask <= n_prev_inflight_branch_mask;
 	  end
      end // always_ff@ (posedge clk)
 
@@ -1370,6 +1406,16 @@ module core(clk,
 	t_alloc_uop.clear_id = r_clear_cnt;
 	t_alloc_uop2.clear_id = r_clear_cnt;
 `endif
+
+	if(t_uop1_in_delay_slot)
+	  begin
+	     t_alloc_uop2.branch_mask = t_inflight_branch_mask;
+	  end
+	else if(t_uop0_in_delay_slot)
+	  begin
+	     t_alloc_uop.branch_mask = n_prev_inflight_branch_mask;
+	  end
+
 	
 	if(t_uop.srcA_valid)
 	  begin
@@ -1418,6 +1464,8 @@ module core(clk,
 	       end
 	     
 	     t_alloc_uop.rob_ptr = r_rob_tail_ptr[`LG_ROB_ENTRIES-1:0];
+	     t_alloc_uop.bob_id = r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0];
+	     
 	  end // if (t_alloc)
 
 	if(t_alloc_two)
@@ -1428,6 +1476,7 @@ module core(clk,
 		  t_alloc_uop2.dst = n_prf_entry2;
 	       end
 	     t_alloc_uop2.rob_ptr = r_rob_next_tail_ptr[`LG_ROB_ENTRIES-1:0];
+	     t_alloc_uop2.bob_id = r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0];	     
 	  end
 	
      end // always_comb
@@ -1665,6 +1714,10 @@ module core(clk,
 	       begin
 		  //$display("rob entry %d marked complete by port 1", t_complete_bundle_1.rob_ptr[`LG_ROB_ENTRIES-1:0]);
 		  r_rob_complete[t_complete_bundle_1.rob_ptr[`LG_ROB_ENTRIES-1:0]] <= t_complete_bundle_1.complete;
+		  //if(t_complete_bundle_1.faulted && t_complete_bundle_1.was_br)
+		  //begin
+		  //$display("fault! bob id = %d", t_complete_bundle_1.bob_id);
+		  //end
 	       end
 
 	     if(core_mem_rsp_valid)
@@ -1846,8 +1899,13 @@ module core(clk,
 	n_rob_next_tail_ptr = r_rob_next_tail_ptr;
 	n_bob_head_ptr = r_bob_head_ptr;
 	n_bob_tail_ptr = r_bob_tail_ptr;
+	n_inflight_branch_mask = r_inflight_branch_mask;
+	n_faulted_branch_mask = r_faulted_branch_mask;
+	n_prev_inflight_branch_mask = r_prev_inflight_branch_mask;
+	t_inflight_branch_mask = 'd0;
 	
-	//rob control 
+	
+	//bob control 
 	if(t_clr_rob)
 	  begin
 	     n_rob_head_ptr = 'd0;
@@ -1878,6 +1936,46 @@ module core(clk,
 	       end
 	  end // else: !if(t_clr_rob)
 
+	//branch mask
+	if(t_clr_rob)
+	  begin
+	     n_inflight_branch_mask = 'd0;
+	     n_prev_inflight_branch_mask ='d0;
+	     n_faulted_branch_mask = 'd0;
+	  end
+	else
+	  begin
+	     n_inflight_branch_mask = r_inflight_branch_mask;
+
+	     if(t_complete_bundle_1.faulted && t_complete_bundle_1.was_br)
+	       begin
+		  n_faulted_branch_mask[t_complete_bundle_1.bob_id] = 1'b1;
+	       end
+	     
+	     //handle any completing branches first
+	     if((!t_complete_bundle_1.faulted) && t_complete_bundle_1.was_br)
+	       begin
+		  n_inflight_branch_mask[t_complete_bundle_1.bob_id] = 1'b0;
+	       end
+	     
+	     t_inflight_branch_mask = n_inflight_branch_mask;
+	     
+	     if(t_alloc && !t_alloc_two && t_uop.is_br )
+	       begin
+		  n_inflight_branch_mask[r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0]] = 1'b1;
+		  n_prev_inflight_branch_mask = t_inflight_branch_mask;		  
+	       end
+	     else if(t_alloc && t_alloc_two && t_uop2.is_br)
+	       begin
+		  n_inflight_branch_mask[r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0]] = 1'b1;
+		  n_prev_inflight_branch_mask = t_inflight_branch_mask;
+	       end
+	     else if(t_alloc && t_alloc_two && t_uop.is_br)
+	       begin
+		  n_inflight_branch_mask[r_bob_tail_ptr[`LG_BOB_ENTRIES-1:0]] = 1'b1;		  
+	       end
+	  end // else: !if(t_clr_rob)
+	
 	//bob control
 	if(t_clr_rob)
 	  begin
@@ -2139,7 +2237,8 @@ module core(clk,
 	   .mem_rsp_dst_valid(core_mem_rsp.dst_valid),
 	   .mem_rsp_load_data(core_mem_rsp.data),
 	   .mem_rsp_rob_ptr(core_mem_rsp.rob_ptr),
-	   .monitor_rsp_data(r_monitor_rsp_data)
+	   .monitor_rsp_data(r_monitor_rsp_data),
+	   .faulted_branch_mask(r_faulted_branch_mask)
 	   );
 
 

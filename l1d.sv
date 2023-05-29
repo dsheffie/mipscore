@@ -818,7 +818,7 @@ endfunction
 	t_bswap_w32_2 = bswap32(t_w32_2);
 
 	t_hit_cache2 = r_valid_out2 && (r_tag_out2 == r_cache_tag2) && r_got_req2 && 
-		      (r_state == ACTIVE);
+		      (r_state == ACTIVE) | r_req2.dead;
 	t_rsp_dst_valid2 = 1'b0;
 	t_rsp_fp_dst_valid2 = 1'b0;
 	t_rsp_data2 = 'd0;
@@ -949,7 +949,7 @@ endfunction
 	t_w32 = (select_cl32(t_data, r_req.addr[WORD_STOP-1:WORD_START]));
 	t_bswap_w32 = bswap32(t_w32);
 	t_hit_cache = r_valid_out && (r_tag_out == r_cache_tag) && r_got_req && 
-		      (r_state == ACTIVE || r_state == INJECT_RELOAD);
+		      (r_state == ACTIVE || r_state == INJECT_RELOAD) | r_req.dead;
 	t_array_data = 'd0;
 	t_wr_array = 1'b0;
 	t_rsp_dst_valid = 1'b0;

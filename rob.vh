@@ -37,6 +37,8 @@ typedef struct packed {
 
 typedef struct packed {
    logic [`LG_ROB_ENTRIES-1:0] rob_ptr;
+   logic [`LG_BOB_ENTRIES-1:0] bob_id;
+   logic 		       was_br;
    logic 		       complete;
    logic 		       faulted;
    logic [`M_WIDTH-1:0]        restart_pc;
@@ -64,6 +66,7 @@ typedef struct packed {
    logic [`LG_PRF_ENTRIES-1:0] dst_ptr;
    logic 		       dst_valid;
    logic [31:0] 	       data;
+   logic 		       dead;
 } mem_req_t;
 
 typedef struct packed {

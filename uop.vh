@@ -138,13 +138,10 @@ typedef struct packed {
    
    logic [`LG_PRF_ENTRIES-1:0] srcA;
    logic 		       srcA_valid;
-   logic 		       fp_srcA_valid;
    logic [`LG_PRF_ENTRIES-1:0] srcB;
    logic 		       srcB_valid;
-   logic 		       fp_srcB_valid;   
    logic [`LG_PRF_ENTRIES-1:0] dst;
    logic 		       dst_valid;
-   logic 		       fp_dst_valid;
 
    logic 		       hilo_dst_valid;
    logic [`LG_HILO_PRF_ENTRIES-1:0] hilo_dst;
@@ -166,6 +163,8 @@ typedef struct packed {
    logic 		       is_mem;
    logic 		       is_store;
    logic [`LG_PHT_SZ-1:0]      pht_idx;
+   logic [`LG_BOB_ENTRIES-1:0] bob_id;
+   logic [(1<<(`LG_BOB_ENTRIES))-1:0] branch_mask;
 `ifdef VERILATOR
    logic [31:0] 	       clear_id;
 `endif

@@ -52,7 +52,8 @@ module exec(clk,
 	    mem_rsp_dst_valid,
 	    mem_rsp_rob_ptr,
 	    mem_rsp_load_data,
-	    monitor_rsp_data);
+	    monitor_rsp_data,
+	    faulted_branch_mask);
    input logic clk;
    input logic reset;
 `ifdef VERILATOR
@@ -103,7 +104,8 @@ module exec(clk,
    input logic [`LG_ROB_ENTRIES-1:0] mem_rsp_rob_ptr;
    
    input logic [`M_WIDTH-1:0] monitor_rsp_data;
-   
+   input logic [(1<<(`LG_BOB_ENTRIES))-1:0] faulted_branch_mask;
+  
    localparam N_INT_SCHED_ENTRIES = 1<<`LG_INT_SCHED_ENTRIES;
    
    localparam N_MQ_ENTRIES = (1<<`LG_MQ_ENTRIES);
@@ -1567,6 +1569,10 @@ module exec(clk,
 	t_mem_tail.dst_ptr = mem_uq.dst;
 	t_mem_tail.is_store = 1'b0;
 	t_mem_tail.data = 32'd0;
+	t_mem_tail.dead = 1'b0;
+	
+	   
+	
 	case(mem_uq.op)
 	  SB:
 	    begin
@@ -1647,6 +1653,10 @@ module exec(clk,
 	    end
 	endcase // case (mem_uq.op)
 
+	if(!t_mem_tail.is_store & (|(faulted_branch_mask & mem_uq.branch_mask)))
+	  begin
+	     t_mem_tail.dead = 1'b1;
+	  end
      end // always_comb
 
    
@@ -1761,6 +1771,8 @@ module exec(clk,
 	if(t_mul_complete || t_div_complete)
 	  begin
 	     complete_bundle_1.rob_ptr <= t_mul_complete ? t_rob_ptr_out : t_div_rob_ptr_out;
+	     complete_bundle_1.bob_id <= 'd0;
+	     complete_bundle_1.was_br <= 1'b0;
 	     complete_bundle_1.complete <= 1'b1;
 	     complete_bundle_1.faulted <= 1'b0;
 	     complete_bundle_1.restart_pc <= 'd0;
@@ -1771,6 +1783,8 @@ module exec(clk,
 	else
 	  begin
 	     complete_bundle_1.rob_ptr <= int_uop.rob_ptr;
+	     complete_bundle_1.bob_id <= int_uop.bob_id;
+	     complete_bundle_1.was_br <= int_uop.is_br;
 	     complete_bundle_1.complete <= t_alu_valid;
 	     complete_bundle_1.faulted <= t_mispred_br || t_unimp_op || t_fault;
 	     complete_bundle_1.restart_pc <= t_pc;
