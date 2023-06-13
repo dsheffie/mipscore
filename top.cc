@@ -67,6 +67,38 @@ static const char* l1d_stall_str[8] =
 static uint64_t l1d_stall_reasons[8] = {0};
 
 
+int read_word(int addr) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  int d = s->mem.get<int>(a);
+  std::cout << "load - address " << std::hex << a
+	    << ", data " << bswap<IS_LITTLE_ENDIAN>(d)    
+	    << std::dec << "\n";
+  assert((a & 3) == 0);
+  return d;
+}
+
+void write_byte(int addr, char data) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  assert(0);
+  
+}
+
+void write_half(int addr, short data) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+
+  assert(0);
+}
+
+void write_word(int addr, int data) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  uint32_t d = *reinterpret_cast<uint32_t*>(&data);
+  std::cout << "store - address " << std::hex << a
+	    << ", data " << bswap<IS_LITTLE_ENDIAN>(d)
+	    << std::dec << "\n";
+  assert((a & 3) == 0);
+  s->mem.set<uint32_t>(a, d);
+}
+
 void record_restart(int cycles) {
   restart_distribution[cycles]++;
 }
@@ -1094,6 +1126,7 @@ int main(int argc, char **argv) {
 	++n_loads;
       }
       else if(tb->mem_req_opcode == 7) { /* store word */
+	assert(0);
 	for(int i = 0; i < 4; i++) {
 	  uint64_t ea = (tb->mem_req_addr + 4*i) & ((1UL<<32)-1);
 	  s->mem.set<uint32_t>(ea, tb->mem_req_store_data[i]);
