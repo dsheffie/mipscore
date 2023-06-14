@@ -15,6 +15,8 @@ import "DPI-C" function int read_word(input int addr);
 import "DPI-C" function void write_byte(input int addr, input byte data);
 import "DPI-C" function void write_half(input int addr, input shortint  data);
 import "DPI-C" function void write_word(input int addr, input int data);
+import "DPI-C" function void write_swl(input int addr, input int data);
+import "DPI-C" function void write_swr(input int addr, input int data);
 
 
 `endif
@@ -708,8 +710,8 @@ endfunction
      begin
    	if(t_wr_array)
    	  begin
-   	     $display("cycle %d : WRITING set %d WITH data %x, addr %x, op %d ptr %d, retry %b, uuid %d", 
-   		      r_cycle, r_cache_idx, t_array_data, r_req.addr, r_req.op, r_req.rob_ptr, r_is_retry, r_req.uuid);
+   	     $display("cycle %d : WRITING set %d WITH data %x, addr %x, op %d ptr %d, retry %b", 
+   		      r_cycle, r_cache_idx, t_array_data, r_req.addr, r_req.op, r_req.rob_ptr, r_is_retry);
    	  end	
      end // always_ff@ (negedge clk)
    
@@ -774,18 +776,15 @@ endfunction
 	  end	
      end
    
-   ram2r1w #(.WIDTH(1), .LG_DEPTH(`LG_L1D_NUM_SETS)) dc_dirty
-     (
-      .clk(clk),
-      .rd_addr0(t_cache_idx),
-      .rd_addr1(t_cache_idx2),
-      .wr_addr(t_dirty_wr_addr),
-      .wr_data(t_dirty_value),
-      .wr_en(t_write_dirty_en),
-      .rd_data0(r_dirty_out),
-      .rd_data1(r_dirty_out2)
-      );
 
+   always_ff@(posedge clk)
+     begin
+	r_dirty_out <= 1'b0;
+	r_dirty_out2 <= 1'b0;
+	r_valid_out <= 1'b1;
+	r_valid_out2 <= 1'b1;
+     end
+   
 
    logic t_valid_value;
    logic t_write_valid_en;
@@ -808,17 +807,6 @@ endfunction
 	  end
      end // always_comb
       
-   ram2r1w #(.WIDTH(1), .LG_DEPTH(`LG_L1D_NUM_SETS)) dc_valid
-     (
-      .clk(clk),
-      .rd_addr0(t_cache_idx),
-      .rd_addr1(t_cache_idx2),
-      .wr_addr(t_valid_wr_addr),
-      .wr_data(t_valid_value),
-      .wr_en(t_write_valid_en),
-      .rd_data0(r_valid_out),
-      .rd_data1(r_valid_out2)
-      );
 
    generate
       for(genvar i = 0; i < WORDS_PER_CL; i=i+1)
@@ -961,6 +949,15 @@ endfunction
 	    end
 	endcase
      end
+
+   always_ff@(negedge clk)
+     begin
+	if(t_hit_cache)
+	  begin
+	     if(r_req.is_store)
+	       $stop();
+	  end
+     end
    
    always_comb
      begin
@@ -970,7 +967,7 @@ endfunction
         t_bswap_w32 = bswap32(t_w32);
 	
 	t_hit_cache = r_got_req && 
-		      (r_state == ACTIVE || r_state == INJECT_RELOAD);
+		      (r_state == ACTIVE);
 	
 	t_array_data = 'd0;
 	t_wr_array = 1'b0;
@@ -1035,7 +1032,7 @@ endfunction
 		      t_rsp_data = {{48{sext16(t_w32[31:16])}}, bswap16(t_w32[31:16])};	     
 		   end
 	       endcase // case (r_req.addr[1])
-	       t_rsp_dst_valid = r_req.dst_valid & t_hit_cache;
+	       t_rsp_dst_valid = r_req.dst_valid;
 	    end
 	  MEM_LHU:
 	    begin
@@ -1093,75 +1090,36 @@ endfunction
 	    end // case: MEM_LWL
 	  MEM_SB:
 	    begin
-	       t_wr_array = (r_is_retry || r_did_reload);	       
+	       t_wr_array = r_got_req;
 	       if(t_wr_array)
 		 write_byte(r_req.addr, r_req.data[7:0]);
 
 	    end
 	  MEM_SH:
 	    begin
-	       t_wr_array = (r_is_retry || r_did_reload);
+	       t_wr_array = r_got_req;	       
 	       if(t_wr_array)
 		 write_half(r_req.addr, bswap16(r_req.data[15:0]));	       
 	    end
 	  MEM_SW:
 	    begin
-	       t_wr_array = (r_is_retry || r_did_reload);
+	       t_wr_array = r_got_req;	       
 	       if(t_wr_array)
 		 write_word(r_req.addr, bswap32(r_req.data[31:0]));	       
 	       
 	    end
-	  // MEM_SC:
-	  //   begin
-	  //      t_array_data = merge_cl32(t_data, bswap32(r_req.data[31:0]), r_req.addr[WORD_STOP-1:WORD_START]);
-	  //      t_rsp_data = 64'd1;
-	  //      t_rsp_dst_valid = r_req.dst_valid & t_hit_cache;
-	  //      t_wr_array = t_hit_cache && (r_is_retry || r_did_reload);
-	  //   end
-	  // MEM_SWR:
-	  //   begin
-	  //      case(r_req.addr[1:0])
-	  // 	 2'd0:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32({r_req.data[7:0], t_bswap_w32[23:0]}), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  // 	 2'd1:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32({r_req.data[15:0], t_bswap_w32[15:0]}), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  // 	 2'd2:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32({r_req.data[23:0], t_bswap_w32[7:0]}), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  // 	 2'd3:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32(r_req.data[31:0]), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  //      endcase // case (r_req.addr[1:0])
-	  //      t_wr_array = t_hit_cache && (r_is_retry || r_did_reload);
-	  //   end
-	  // MEM_SWL:
-	  //   begin
-	  //      case(r_req.addr[1:0])
-	  // 	 2'd0:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, t_bswap_w32, r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  // 	 2'd1:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32({t_bswap_w32[31:24], r_req.data[31:8]}), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  // 	 2'd2:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32({t_bswap_w32[31:16], r_req.data[31:16]}), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  // 	 2'd3:
-	  // 	   begin
-	  // 	      t_array_data = merge_cl32(t_data, bswap32({t_bswap_w32[31:8], r_req.data[31:24]}), r_req.addr[WORD_STOP-1:WORD_START]);
-	  // 	   end
-	  //      endcase // case (r_req.addr[1:0])
-	  //      t_wr_array = t_hit_cache && (r_is_retry || r_did_reload);
-	  //   end // case: MEM_SWL
+	  MEM_SWR:
+	    begin
+	       t_wr_array = r_got_req;	       	       
+	       if(t_wr_array)
+		 write_swr(r_req.addr, bswap32(r_req.data[31:0]));	       
+	    end
+	  MEM_SWL:
+	    begin
+	       t_wr_array = r_got_req;
+	       if(t_wr_array)
+		 write_swl(r_req.addr, bswap32(r_req.data[31:0]));	       
+	    end // case: MEM_SWL
 	  
 	  default:
 	    begin
@@ -1185,7 +1143,7 @@ endfunction
    always_comb
      begin
 	t_got_rd_retry = 1'b0;
-	t_port2_hit_cache = r_valid_out2 && (r_tag_out2 == r_cache_tag2);
+	t_port2_hit_cache = r_got_req2;
 	
 	n_state = r_state;
 	t_miss_idx = r_miss_idx;
@@ -1303,8 +1261,7 @@ endfunction
 			 n_stall_store = 1'b1;
 			 //ack early
 			 n_core_mem_rsp.dst_valid = 1'b0;
-			  
-
+			 
 			 if(t_port2_hit_cache)
 			   begin
 			      n_cache_hits = r_cache_hits + 'd1;
@@ -1327,6 +1284,10 @@ endfunction
 		      end
 		    else
 		      begin
+			 //$stop();
+			 $display("cycle %d port2 wtf for op %d, addr %x, data %x, hit cache %b, hit busy %b", r_cycle, r_req2.op, r_req2.addr, t_rsp_data2, 
+				  t_port2_hit_cache, r_hit_busy_addr2);
+
 			 t_push_miss = 1'b1;
 			 if(t_port2_hit_cache)
 			   begin
@@ -1337,10 +1298,8 @@ endfunction
 	       
 	       if(r_got_req)
 		 begin
-		    if(r_valid_out && (r_tag_out == r_cache_tag))
+		    if(r_valid_out /*&& (r_tag_out == r_cache_tag)*/)
 		      begin /* valid cacheline - hit in cache */
-			 
-			 			 
 			 if(r_req.is_store)
 			   begin
 			      t_reset_graduated = 1'b1;				   
@@ -1352,38 +1311,6 @@ endfunction
 			      n_core_mem_rsp_valid = 1'b1;
 			   end // else: !if(r_req.is_store)
 		      end // if (r_valid_out && (r_tag_out == r_cache_tag))
-		    else if(r_valid_out && r_dirty_out && (r_tag_out != r_cache_tag) )
-		      begin
-			 
-			 n_reload_issue = 1'b1; //r_is_retry;			 			 
-			 t_got_miss = 1'b1;
-			 n_inhibit_write = 1'b1;
-			 if(r_hit_busy_addr && r_is_retry || !r_hit_busy_addr)
-			   begin
-			      n_reload_issue = 1'b1;
-			      n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-			      n_mem_req_opcode = MEM_SW;
-			      n_mem_req_store_data = t_data;
-			      n_inhibit_write = 1'b1;
-			      t_miss_idx = r_cache_idx;
-			      t_miss_addr = r_req.addr;
-
-			      n_lock_cache = 1'b1;
-			      if((rr_cache_idx == r_cache_idx) && rr_last_wr)
-				begin
-				   //$display("inflight write to line, must wait");
-				   t_cache_idx = r_cache_idx;
-				   n_state = WAIT_INJECT_RELOAD;
-				   n_mem_req_valid = 1'b0;				   
-				end
-			      else
-				begin
-				   //$display("no wait");
-				   n_state = INJECT_RELOAD;				   
-				   n_mem_req_valid = 1'b1;
-				end
-			   end // if (!t_stall_for_busy)
-		      end
 		  else
 		    begin
 		       
@@ -1393,35 +1320,17 @@ endfunction
 `endif
 
 		       t_got_miss = 1'b1;
-		       n_inhibit_write = 1'b0;	
+		       n_inhibit_write = 1'b0;
+
+		       $display("r_hit_busy_addr=%b,r_is_retry=%b,r_lock_cache=%b", 
+				r_hit_busy_addr, r_is_retry,r_lock_cache);
+		       
 
 		       if(r_hit_busy_addr && r_is_retry || !r_hit_busy_addr || r_lock_cache)
 			 begin
-			    n_reload_issue = 1'b1; 
-
-
-			    t_miss_idx = r_cache_idx;
-			    t_miss_addr = r_req.addr;		       
-
-			    t_cache_idx = r_cache_idx;
-			    
-			    if((rr_cache_idx == r_cache_idx) && rr_last_wr)
-			      begin
-				 n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-			    n_lock_cache = 1'b1;
-			    n_mem_req_opcode = MEM_SW;
-			    n_state = WAIT_INJECT_RELOAD;
-			    n_mem_req_valid = 1'b0;
-			      end                                                             
-			    else
-			      begin
-				 n_lock_cache = 1'b0;
-				 n_mem_req_addr = {r_req.addr[`M_WIDTH-1:`LG_L1D_CL_LEN], {`LG_L1D_CL_LEN{1'b0}}};
-				 n_mem_req_opcode = MEM_LW;				 
-				 n_state = INJECT_RELOAD;
-				 n_mem_req_valid = 1'b1;
-			      end
-			 end // if (!t_stall_for_busy)
+			    $stop();
+			 end
+		       
 		    end // else: !if(r_valid_out && r_dirty_out && (r_tag_out != r_cache_tag)...
 	       end // if (r_got_req)
 
@@ -1430,7 +1339,7 @@ endfunction
 
 
 	       
-	     if(!mem_q_empty && !t_got_miss && !r_lock_cache)
+	     if(!mem_q_empty && !r_lock_cache)
 	       begin
 		  if(!t_mh_block)
 		    begin
@@ -1442,10 +1351,8 @@ endfunction
 			    
 			    if(r_graduated[t_mem_head.rob_ptr] == 2'b10 && (core_store_data_valid ? (t_mem_head.rob_ptr == core_store_data.rob_ptr) : 1'b0) )
 			      begin
-`ifdef VERBOSE_L1D
-				 $display("firing store for %x with data %x at cycle %d for rob ptr %d, uuid %d", 
-					  t_mem_head.addr, t_mem_head.data, r_cycle, t_mem_head.rob_ptr, t_mem_head.uuid);
-`endif
+				 $display("firing store for %x with data %x at cycle %d for rob ptr %d", 
+					  t_mem_head.addr, t_mem_head.data, r_cycle, t_mem_head.rob_ptr);
 				 t_pop_mq = 1'b1;
 				 core_store_data_ack = 1'b1;
 				 n_req = t_mem_head;
@@ -1459,10 +1366,8 @@ endfunction
 			      end // if (t_mem_head.rob_ptr == head_of_rob_ptr)
 			    else if(drain_ds_complete && dead_rob_mask[t_mem_head.rob_ptr])
 			      begin
-`ifdef VERBOSE_L1D
 				 $display("CLEARING EVERYTHING OUT, should clear line %d for rob ptr %d, data %x", 
 					  t_mem_head.addr[IDX_STOP-1:IDX_START], t_mem_head.rob_ptr, t_mem_head.data);
-`endif
 				 t_pop_mq = 1'b1;
 				 t_force_clear_busy = 1'b1;
 			      end
@@ -1496,10 +1401,9 @@ endfunction
 			    n_last_rd = 1'b1;
 			    t_got_rd_retry = 1'b1;
 			    
-`ifdef VERBOSE_L1D			    
-			    $display("firing load for %x at cycle %d for rob ptr %d, uuid %d", 
-				     t_mem_head.addr, r_cycle, t_mem_head.rob_ptr, t_mem_head.uuid);
-`endif
+			    $display("firing load for %x at cycle %d for rob ptr %d", 
+				     t_mem_head.addr, r_cycle, t_mem_head.rob_ptr);
+
 			 end
 		    end
 	       end
@@ -1541,9 +1445,6 @@ endfunction
 	       else if(r_flush_req && mem_q_empty && !(r_got_req && r_last_wr))
 		 begin
 		    n_state = FLUSH_CACHE;
-		    if(!mem_q_empty) $stop();
-		    if(r_got_req && r_last_wr) $stop();
-		    //$display("flush begins at cycle %d, mem_q_empty = %b", r_cycle, mem_q_empty);
 		    t_cache_idx = 'd0;
 		    n_flush_req = 1'b0;
 		 end
@@ -1559,13 +1460,15 @@ endfunction
 	    end // case: ACTIVE
 	  WAIT_INJECT_RELOAD:
 	    begin
+	       $stop();
 	       n_mem_req_valid = 1'b1;
 	       n_state = INJECT_RELOAD;
 	       n_mem_req_store_data = t_data;
 	    end
 	  INJECT_RELOAD:
 	    begin
-	       	if(mem_rsp_valid)
+	       $stop();
+	       if(mem_rsp_valid)
 		  begin
 		     n_state = r_reload_issue ? HANDLE_RELOAD : ACTIVE;
 		     n_inhibit_write = 1'b0;
@@ -1584,70 +1487,12 @@ endfunction
 	       n_did_reload = 1'b1;
 	       n_state = ACTIVE;
 	    end
-	  FLUSH_CL:
-	    begin
-	       if(r_dirty_out)
-		 begin
-		    n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-	       n_mem_req_opcode = MEM_SW;
-	       n_mem_req_store_data = t_data;
-	       n_state = FLUSH_CL_WAIT;
-	       n_inhibit_write = 1'b1;
-	            n_mem_req_valid = 1'b1;	       
-		 end
-	       else
-		 begin
-		    n_state = ACTIVE;
-		    t_mark_invalid = 1'b1;
-		    n_flush_complete = 1'b1;
-		 end
-	    end // case: FLUSH_CL
-	  FLUSH_CL_WAIT:
-	    begin
-	       	if(mem_rsp_valid)
-		  begin
-		     n_state = ACTIVE;
-		     n_inhibit_write = 1'b0;
-		     n_flush_complete = 1'b1;
-		  end	       
-	    end
 	  FLUSH_CACHE:
 	    begin
-	       t_cache_idx = r_cache_idx + 'd1;
-	       if(r_cache_idx == (L1D_NUM_SETS-1))
-		 begin
-		    //$display("flush done at cycle %d", r_cycle);
-		    n_state = ACTIVE;
-		    n_flush_complete = 1'b1;
-		 end
-	       else
-		 begin
-		    if(!r_dirty_out)
-		      begin
-			 t_mark_invalid = 1'b1;
-			 t_cache_idx = r_cache_idx + 'd1;
-		      end
-		    else
-		      begin
-			 n_mem_req_addr = {r_tag_out,r_cache_idx,{`LG_L1D_CL_LEN{1'b0}}};
-	            n_mem_req_opcode = MEM_SW;
-	            n_mem_req_store_data = t_data;
-	            n_state = FLUSH_CACHE_WAIT;
-		    n_inhibit_write = 1'b1;
-	            n_mem_req_valid = 1'b1;	       
-		 end // else: !if(r_valid_out && !r_dirty_out)
-		 end // else: !if(r_cache_idx == (L1D_NUM_SETS-1))
+	       n_state = ACTIVE;
+	       n_flush_complete = 1'b1;
 	    end // case: FLUSH_CACHE
 	  
-	  FLUSH_CACHE_WAIT:
-	    begin
-	       t_cache_idx = r_cache_idx;
-	       	if(mem_rsp_valid)
-		  begin
-		     n_state = FLUSH_CACHE;
-		     n_inhibit_write = 1'b0;
-		  end
-	    end
 	  default:
 	    begin
 	    end

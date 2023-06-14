@@ -69,11 +69,16 @@ static uint64_t l1d_stall_reasons[8] = {0};
 
 int read_word(int addr) {
   uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
-  int d = s->mem.get<int>(a);
-  std::cout << "load - address " << std::hex << a
-	    << ", data " << bswap<IS_LITTLE_ENDIAN>(d)    
-	    << std::dec << "\n";
-  assert((a & 3) == 0);
+  int d = -1;
+  if((a & 3) == 0) {
+    d  = s->mem.get<int>(a);
+  }
+
+  //std::cout << "load - address " << std::hex << a
+  //<< ", data " << bswap<IS_LITTLE_ENDIAN>(d)    
+  //<< std::dec << "\n";
+  
+    //assert((a & 3) == 0);
   return d;
 }
 
@@ -98,6 +103,37 @@ void write_word(int addr, int data) {
   assert((a & 3) == 0);
   s->mem.set<uint32_t>(a, d);
 }
+
+
+void write_swl(int addr, int data) {
+  uint32_t ea = *reinterpret_cast<uint32_t*>(&addr);
+  uint32_t d = *reinterpret_cast<uint32_t*>(&data);
+  uint32_t ma = ea & 3;
+  ea &= 0xfffffffc;
+  uint32_t r = bswap<IS_LITTLE_ENDIAN>(s->mem.get<uint32_t>(ea));
+  uint32_t xx=0,x = bswap<IS_LITTLE_ENDIAN>(d);
+  uint32_t xs = x >> (8*ma);
+  uint32_t m = ~((1U << (8*(4 - ma))) - 1);
+  xx = (r & m) | xs;
+  s->mem.set<uint32_t>(ea, bswap<IS_LITTLE_ENDIAN>(xx));  
+
+}
+
+void write_swr(int addr, int data) {
+  uint32_t ea = *reinterpret_cast<uint32_t*>(&addr);
+  uint32_t d = *reinterpret_cast<uint32_t*>(&data);
+  uint32_t ma = ea & 3;
+  ea &= ~(3U);
+  uint32_t r = bswap<IS_LITTLE_ENDIAN>(s->mem.get<uint32_t>(ea));   
+  uint32_t xx=0,x = bswap<IS_LITTLE_ENDIAN>(d);
+  
+  uint32_t xs = 8*(3-ma);
+  uint32_t rm = (1U << xs) - 1;
+
+  xx = (x << xs) | (rm & r);
+  s->mem.set<uint32_t>(ea, bswap<IS_LITTLE_ENDIAN>(xx));
+}
+
 
 void record_restart(int cycles) {
   restart_distribution[cycles]++;
