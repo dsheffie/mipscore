@@ -98,9 +98,9 @@ void write_half(int addr, short data) {
 void write_word(int addr, int data) {
   uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
   uint32_t d = *reinterpret_cast<uint32_t*>(&data);
-  std::cout << "store - address " << std::hex << a
-	    << ", data " << bswap<IS_LITTLE_ENDIAN>(d)
-	    << std::dec << "\n";
+  //std::cout << "store - address " << std::hex << a
+  //<< ", data " << bswap<IS_LITTLE_ENDIAN>(d)
+  //<< std::dec << "\n";
   assert((a & 3) == 0);
   s->mem.set<uint32_t>(a, d);
 }

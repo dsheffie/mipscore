@@ -1247,8 +1247,9 @@ endfunction
 		    else
 		      begin
 			 //$stop();
-			 $display("cycle %d port2 wtf for op %d, addr %x, data %x, hit cache %b, hit busy %b", r_cycle, r_req2.op, r_req2.addr, t_rsp_data2, 
-				  t_port2_hit_cache, r_hit_busy_addr2);
+			 //$display("cycle %d port2 wtf for op %d, addr %x, data %x, hit cache %b, hit busy %b", 
+			 //r_cycle, r_req2.op, r_req2.addr, t_rsp_data2, 
+			 //t_port2_hit_cache, r_hit_busy_addr2);
 
 			 t_push_miss = 1'b1;
 			 if(t_port2_hit_cache)
@@ -1313,8 +1314,8 @@ endfunction
 			    
 			    if(r_graduated[t_mem_head.rob_ptr] == 2'b10 && (core_store_data_valid ? (t_mem_head.rob_ptr == core_store_data.rob_ptr) : 1'b0) )
 			      begin
-				 $display("firing store for %x with data %x at cycle %d for rob ptr %d", 
-					  t_mem_head.addr, t_mem_head.data, r_cycle, t_mem_head.rob_ptr);
+				 //$display("firing store for %x with data %x at cycle %d for rob ptr %d", 
+				 //t_mem_head.addr, t_mem_head.data, r_cycle, t_mem_head.rob_ptr);
 				 t_pop_mq = 1'b1;
 				 core_store_data_ack = 1'b1;
 				 n_req = t_mem_head;
@@ -1328,8 +1329,6 @@ endfunction
 			      end // if (t_mem_head.rob_ptr == head_of_rob_ptr)
 			    else if(drain_ds_complete && dead_rob_mask[t_mem_head.rob_ptr])
 			      begin
-				 $display("CLEARING EVERYTHING OUT, should clear line %d for rob ptr %d, data %x", 
-					  t_mem_head.addr[IDX_STOP-1:IDX_START], t_mem_head.rob_ptr, t_mem_head.data);
 				 t_pop_mq = 1'b1;
 				 t_force_clear_busy = 1'b1;
 			      end
@@ -1363,8 +1362,8 @@ endfunction
 			    n_last_rd = 1'b1;
 			    t_got_rd_retry = 1'b1;
 			    
-			    $display("firing load for %x at cycle %d for rob ptr %d", 
-				     t_mem_head.addr, r_cycle, t_mem_head.rob_ptr);
+			    //$display("firing load for %x at cycle %d for rob ptr %d", 
+			    //t_mem_head.addr, r_cycle, t_mem_head.rob_ptr);
 
 			 end
 		    end
