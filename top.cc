@@ -84,14 +84,15 @@ int read_word(int addr) {
 
 void write_byte(int addr, char data) {
   uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
-  assert(0);
-  
+  uint8_t d = *reinterpret_cast<uint8_t*>(&data);
+  s->mem.set<uint8_t>(a, d);
 }
 
 void write_half(int addr, short data) {
   uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  uint16_t d = *reinterpret_cast<uint16_t*>(&data);
+  s->mem.set<uint16_t>(a, d);
 
-  assert(0);
 }
 
 void write_word(int addr, int data) {

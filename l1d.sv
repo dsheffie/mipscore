@@ -172,16 +172,15 @@ endfunction
    
    //1st read port
    logic [`LG_L1D_NUM_SETS-1:0] 	  t_cache_idx, r_cache_idx, rr_cache_idx;
-   logic [N_TAG_BITS-1:0] 		  t_cache_tag, r_cache_tag, r_tag_out;
+   logic [N_TAG_BITS-1:0] 		  t_cache_tag, r_cache_tag;
    logic [N_TAG_BITS-1:0] 		  rr_cache_tag;
    logic 				  r_valid_out, r_dirty_out;
-   logic [L1D_CL_LEN_BITS-1:0] 		  r_array_out, t_data;
+   logic [L1D_CL_LEN_BITS-1:0] 		  t_data;
    
    //2nd read port
    logic [`LG_L1D_NUM_SETS-1:0] 	  t_cache_idx2, r_cache_idx2;
-   logic [N_TAG_BITS-1:0] 		  t_cache_tag2, r_cache_tag2, r_tag_out2;
+   logic [N_TAG_BITS-1:0] 		  t_cache_tag2, r_cache_tag2;
    logic 				  r_valid_out2, r_dirty_out2;
-   logic [L1D_CL_LEN_BITS-1:0] 		  r_array_out2;
    
    
    logic [`LG_L1D_NUM_SETS-1:0] 	  t_miss_idx, r_miss_idx;
@@ -199,7 +198,6 @@ endfunction
    logic 				  r_flush_complete, n_flush_complete;
    
 
-   logic [31:0] 			  t_array_out_b32[WORDS_PER_CL-1:0];
    logic [31:0] 			  t_w32, t_bswap_w32;
    logic [31:0] 			  t_w32_2, t_bswap_w32_2;
 
@@ -309,11 +307,6 @@ endfunction
 	r_cycle <= reset ? 'd0 : (r_cycle + 'd1);
      end
    
-   always_ff@(negedge clk)
-     begin
-	$display("r_state = %d, cycle = %d", r_state, r_cycle);
-	
-     end
    
    always_ff@(posedge clk)
      begin
@@ -457,7 +450,7 @@ endfunction
 		  
 		  r_rob_inflight[r_req2.rob_ptr] <= 1'b1;
 	       end
-	     if(r_got_req && r_valid_out && (r_tag_out == r_cache_tag))
+	     if(r_got_req)
 	       begin
 		  //$display("rob entry %d leaves at cycle %d", r_req.rob_ptr, r_cycle);
 		  if(r_rob_inflight[r_req.rob_ptr] == 1'b0) 
@@ -726,30 +719,7 @@ endfunction
      end
 `endif
 
- ram2r1w #(.WIDTH(N_TAG_BITS), .LG_DEPTH(`LG_L1D_NUM_SETS)) dc_tag
-     (
-      .clk(clk),
-      .rd_addr0(t_cache_idx),
-      .rd_addr1(t_cache_idx2),
-      .wr_addr(r_mem_req_addr[IDX_STOP-1:IDX_START]),
-      .wr_data(r_mem_req_addr[`M_WIDTH-1:IDX_STOP]),
-      .wr_en(mem_rsp_valid),
-      .rd_data0(r_tag_out),
-      .rd_data1(r_tag_out2)
-      );
-     
 
-   ram2r1w #(.WIDTH(L1D_CL_LEN_BITS), .LG_DEPTH(`LG_L1D_NUM_SETS)) dc_data
-     (
-      .clk(clk),
-      .rd_addr0(t_cache_idx),
-      .rd_addr1(t_cache_idx2),
-      .wr_addr(t_array_wr_addr),
-      .wr_data(t_array_wr_data),
-      .wr_en(t_array_wr_en),
-      .rd_data0(r_array_out),
-      .rd_data1(r_array_out2)
-      );
 
    logic t_dirty_value;
    logic t_write_dirty_en;
@@ -808,15 +778,7 @@ endfunction
      end // always_comb
       
 
-   generate
-      for(genvar i = 0; i < WORDS_PER_CL; i=i+1)
-	begin
-	   assign t_array_out_b32[i] = bswap32(t_data[((i+1)*32)-1:i*32]);
-	end
-   endgenerate
 
-
-   
    logic [31:0] tt_w32_2, tt_bswap_w32_2;
    
    always_comb
@@ -827,7 +789,7 @@ endfunction
 	t_rsp_fp_dst_valid2 = 1'b0;
 	t_rsp_data2 = 'd0;
 
-	tt_w32_2 = read_word(r_req2.addr);
+	tt_w32_2 = read_word({r_req2.addr[31:2], 2'd0});
 	tt_bswap_w32_2 = bswap32(tt_w32_2);
 	
 	
@@ -873,7 +835,7 @@ endfunction
 		   begin
 		      t_rsp_data2 = {56'd0, tt_w32_2[31:24]};
 		   end
-	       endcase 
+	       endcase // case (r_req2.addr[1:0])
 	       t_rsp_dst_valid2 = r_req2.dst_valid & t_hit_cache2;	       
 	    end
 	  MEM_LH:
@@ -898,7 +860,7 @@ endfunction
 	  MEM_LW:
 	    begin
 	       t_rsp_data2 = {{32{tt_bswap_w32_2[31]}}, tt_bswap_w32_2};
-	       t_rsp_dst_valid2 = r_req2.dst_valid;
+	       t_rsp_dst_valid2 = r_req2.dst_valid & t_hit_cache2;
 	    end
 	  MEM_LWR:
 	    begin
@@ -950,20 +912,20 @@ endfunction
 	endcase
      end
 
-   always_ff@(negedge clk)
-     begin
-	if(t_hit_cache)
-	  begin
-	     if(r_req.is_store)
-	       $stop();
-	  end
-     end
+   // always_ff@(negedge clk)
+   //   begin
+   // 	if(t_hit_cache)
+   // 	  begin
+   // 	     if(r_req.is_store)
+   // 	       $stop();
+   // 	  end
+   //   end
    
    always_comb
      begin
 	t_data = 'd0;
-	
-	t_w32 = read_word(r_req.addr);
+
+	t_w32 = read_word({r_req.addr[31:2], 2'd0});
         t_bswap_w32 = bswap32(t_w32);
 	
 	t_hit_cache = r_got_req && 
@@ -996,7 +958,7 @@ endfunction
 		      t_rsp_data = {{56{t_w32[31]}}, t_w32[31:24]};
 		   end
 	       endcase
-	       t_rsp_dst_valid = r_req.dst_valid;
+	       t_rsp_dst_valid = r_req.dst_valid & t_hit_cache;
 	    end
 	  MEM_LBU:
 	    begin
@@ -1018,7 +980,7 @@ endfunction
 		      t_rsp_data = {56'd0, t_w32[31:24]};
 		   end
 	       endcase // case (r_req.addr[1:0])
-	       t_rsp_dst_valid = r_req.dst_valid;	       
+	       t_rsp_dst_valid = r_req.dst_valid & t_hit_cache;	       
 	    end
 	  MEM_LH:
 	    begin
@@ -1032,7 +994,7 @@ endfunction
 		      t_rsp_data = {{48{sext16(t_w32[31:16])}}, bswap16(t_w32[31:16])};	     
 		   end
 	       endcase // case (r_req.addr[1])
-	       t_rsp_dst_valid = r_req.dst_valid;
+	       t_rsp_dst_valid = r_req.dst_valid &t_hit_cache;
 	    end
 	  MEM_LHU:
 	    begin
@@ -1042,7 +1004,7 @@ endfunction
 	  MEM_LW:
 	    begin
 	       t_rsp_data = {{32{t_bswap_w32[31]}}, t_bswap_w32};
-	       t_rsp_dst_valid = r_req.dst_valid;
+	       t_rsp_dst_valid = r_req.dst_valid & t_hit_cache;
 	    end
 	  MEM_LWR:
 	    begin
