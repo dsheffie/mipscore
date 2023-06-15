@@ -397,6 +397,8 @@ module core_l1d_l1i(clk,
    l1i icache(
 	      .clk(clk),
 	      .reset(reset),
+	      .got_break(got_break),
+	      .got_ud(got_ud),	      
 	      .flush_req(flush_req_l1i),
 	      .flush_complete(l1i_flush_complete),
 	      .restart_pc(restart_pc),

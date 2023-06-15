@@ -15,6 +15,7 @@ bool globals::trace_fp = false;
 bool globals::report_syscalls = false;
 static state_t *s = nullptr;
 static state_t *ss = nullptr;
+static state_t *oracle = nullptr;
 static uint64_t insns_retired = 0;
 static uint64_t pipestart = 0, pipeend = ~(0UL);
 
@@ -66,6 +67,22 @@ static const char* l1d_stall_str[8] =
 };
 static uint64_t l1d_stall_reasons[8] = {0};
 
+
+int lookup_target(int addr, long long branchcnt) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  //std::cout << "branch ip " << std::hex << a << std::dec << ", branchcount " << branchcnt << "\n";
+  
+  while(oracle->branchcnt < branchcnt) {
+    //std::cout << "oracle pc = " << std::hex << oracle->pc << std::dec << "\n";
+    execMips(oracle);
+  }
+  const branch_record &b = oracle->get_branch(branchcnt);
+  //std::cout << "record pc = " << std::hex << b.pc << std::dec << "\n";
+  //std::cout << "record target = " << std::hex << b.target << std::dec << "\n";
+  assert(b.pc == addr);
+  assert(b.branchcnt == branchcnt);
+  return b.target;
+}
 
 int read_word(int addr) {
   uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
@@ -423,8 +440,10 @@ int main(int argc, char **argv) {
   sparse_mem *sm1 = new sparse_mem();
   s = new state_t(*sm0);
   ss = new state_t(*sm1);
+  oracle = new state_t(*(new sparse_mem()));
   initState(s);
   initState(ss);
+  initState(oracle);
   globals::sysArgc = buildArgcArgv(mips_binary.c_str(),sysArgs.c_str(),&globals::sysArgv);
   initCapstone();
 
@@ -451,10 +470,13 @@ int main(int argc, char **argv) {
   //load checker
    if(use_checkpoint) {
      loadState(*ss, mips_binary.c_str());
+     loadState(*oracle, mips_binary.c_str());
    }
    else {
      load_elf(mips_binary.c_str(), ss);
      mkMonitorVectors(ss);
+     load_elf(mips_binary.c_str(), oracle);
+     mkMonitorVectors(oracle);     
    }
   
   // Create an instance of our module under test
@@ -666,6 +688,7 @@ int main(int argc, char **argv) {
   }
   
   s->pc = ss->pc;
+  assert(oracle->pc == ss->pc);
   while(!tb->ready_for_resume) {
     ++globals::cycle;  
       tb->clk = 1;
@@ -1397,6 +1420,7 @@ int main(int argc, char **argv) {
 
   delete s;
   delete ss;
+  delete oracle;
   delete [] insns_delivered;
   if(pl) {
     delete pl;
