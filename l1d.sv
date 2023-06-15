@@ -119,8 +119,7 @@ module l1d(clk,
    localparam IDX_STOP  = `LG_L1D_CL_LEN + `LG_L1D_NUM_SETS;
    localparam WORD_START = 2;
    localparam WORD_STOP = WORD_START+LG_WORDS_PER_CL;
-   localparam DWORD_START = 3;
-   localparam DWORD_STOP = DWORD_START + LG_DWORDS_PER_CL;
+
   
    localparam N_MQ_ENTRIES = (1<<`LG_MRQ_ENTRIES);
 
@@ -187,11 +186,7 @@ endfunction
    logic [`M_WIDTH-1:0] 		  t_miss_addr, r_miss_addr;
 
    //write port   
-   logic [`LG_L1D_NUM_SETS-1:0] 	  t_array_wr_addr;
-   logic [L1D_CL_LEN_BITS-1:0] 		  t_array_wr_data, r_array_wr_data;
-
-   logic 				  t_array_wr_en;
-		  
+ 
 
    logic 				  r_flush_req, n_flush_req;
    logic 				  r_flush_cl_req, n_flush_cl_req;
@@ -207,12 +202,10 @@ endfunction
    logic 				  t_wr_array;
    logic 				  t_hit_cache;
    logic 				  t_rsp_dst_valid;
-   logic 				  t_rsp_fp_dst_valid;
    logic [63:0] 			  t_rsp_data;
    
    logic 				  t_hit_cache2;
    logic 				  t_rsp_dst_valid2;
-   logic 				  t_rsp_fp_dst_valid2;
    logic [63:0] 			  t_rsp_data2;
 
 
@@ -236,7 +229,6 @@ endfunction
    logic 				  n_stall_store, r_stall_store;
       
    logic 				  n_is_retry, r_is_retry;
-   logic 				  r_q_priority, n_q_priority;
    
    logic 				  n_core_mem_rsp_valid, r_core_mem_rsp_valid;
    mem_rsp_t n_core_mem_rsp, r_core_mem_rsp;
@@ -260,8 +252,6 @@ endfunction
    typedef enum logic [3:0] {INITIALIZE,
 			     INIT_CACHE,
 			     ACTIVE,
-                             INJECT_RELOAD,
-			     WAIT_INJECT_RELOAD,
                              FLUSH_CACHE,
                              FLUSH_CACHE_WAIT,
                              FLUSH_CL,
@@ -563,10 +553,6 @@ endfunction
 `endif
 
 
-   always_ff@(posedge clk)
-     begin
-	r_array_wr_data <= t_array_wr_data;
-     end
   
    always_ff@(posedge clk)
      begin
@@ -614,7 +600,6 @@ endfunction
 	     r_store_stalls <= 'd0;
 	     r_inhibit_write <= 1'b0;
 	     memq_empty <= 1'b1;
-	     r_q_priority <= 1'b0;
 	     r_must_forward <= 1'b0;
 	     r_must_forward2 <= 1'b0;
 	  end
@@ -668,21 +653,11 @@ endfunction
 			   && !t_push_miss
 			   && (r_n_inflight == 'd0);
 	     
-	     r_q_priority <= n_q_priority;
 	     r_must_forward  <= t_mh_block & t_pop_mq;
 	     r_must_forward2 <= t_cm_block & core_mem_req_ack;
 	  end
      end // always_ff@ (posedge clk)
 
-`ifdef VERBOSE_L1D
-   always_ff@(negedge clk)
-     begin
-	if(memq_empty)
-	  begin
-	     $display("MEMQ EMTPY AT CYCLE %d", r_cycle);
-	  end
-     end
-`endif
    
    always_ff@(posedge clk)
      begin
@@ -691,61 +666,7 @@ endfunction
 	r_core_mem_rsp <= n_core_mem_rsp;
      end
 
-   always_comb
-     begin
-	t_array_wr_addr = mem_rsp_valid ? r_mem_req_addr[IDX_STOP-1:IDX_START] : r_cache_idx;
-	t_array_wr_data = mem_rsp_valid ? mem_rsp_load_data : t_array_data;
-	t_array_wr_en = mem_rsp_valid || t_wr_array;
-     end
 
-`ifdef VERBOSE_L1D
-   always_ff@(negedge clk)
-     begin
-   	if(t_wr_array)
-   	  begin
-   	     $display("cycle %d : WRITING set %d WITH data %x, addr %x, op %d ptr %d, retry %b", 
-   		      r_cycle, r_cache_idx, t_array_data, r_req.addr, r_req.op, r_req.rob_ptr, r_is_retry);
-   	  end	
-     end // always_ff@ (negedge clk)
-   
-   always_comb
-     begin
-   	if(mem_rsp_valid)
-   	  begin
-   	     $display("cycle %d : CACHERELOAD from addr %x -> set %d data %x", 
-   		      r_cycle, r_mem_req_addr, r_mem_req_addr[IDX_STOP-1:IDX_START], t_array_wr_data);
-   	  end
-
-     end
-`endif
-
-
-
-   logic t_dirty_value;
-   logic t_write_dirty_en;
-   logic [`LG_L1D_NUM_SETS-1:0] t_dirty_wr_addr;
-   
-   always_comb
-     begin
-	t_dirty_value = 1'b0;
-	t_write_dirty_en = 1'b0;
-	t_dirty_wr_addr = r_cache_idx;
-	if(t_mark_invalid)
-	  begin
-	     t_write_dirty_en = 1'b1;	     
-	  end
-	else if(mem_rsp_valid)
-	  begin
-	     t_dirty_wr_addr = r_mem_req_addr[IDX_STOP-1:IDX_START];
-	     t_write_dirty_en = 1'b1;
-	  end
-	else if(t_wr_array)
-	  begin
-	     t_dirty_value = 1'b1;
-	     t_write_dirty_en = 1'b1;
-	  end	
-     end
-   
 
    always_ff@(posedge clk)
      begin
@@ -756,27 +677,6 @@ endfunction
      end
    
 
-   logic t_valid_value;
-   logic t_write_valid_en;
-   logic [`LG_L1D_NUM_SETS-1:0] t_valid_wr_addr;
-
-   always_comb
-     begin
-	t_valid_value = 1'b0;
-	t_write_valid_en = 1'b0;
-	t_valid_wr_addr = r_cache_idx;
-	if(t_mark_invalid)
-	  begin
-	     t_write_valid_en = 1'b1;
-	  end
-	else if(mem_rsp_valid)
-	  begin
-	     t_valid_wr_addr = r_mem_req_addr[IDX_STOP-1:IDX_START];
-	     t_valid_value = !r_inhibit_write;
-	     t_write_valid_en = 1'b1;
-	  end
-     end // always_comb
-      
 
 
    logic [31:0] tt_w32_2, tt_bswap_w32_2;
@@ -786,7 +686,6 @@ endfunction
 	t_hit_cache2 =  r_got_req2 && (r_state == ACTIVE);
 	
 	t_rsp_dst_valid2 = 1'b0;
-	t_rsp_fp_dst_valid2 = 1'b0;
 	t_rsp_data2 = 'd0;
 
 	tt_w32_2 = read_word({r_req2.addr[31:2], 2'd0});
@@ -911,15 +810,6 @@ endfunction
 	    end
 	endcase
      end
-
-   // always_ff@(negedge clk)
-   //   begin
-   // 	if(t_hit_cache)
-   // 	  begin
-   // 	     if(r_req.is_store)
-   // 	       $stop();
-   // 	  end
-   //   end
    
    always_comb
      begin
@@ -931,10 +821,7 @@ endfunction
 	t_hit_cache = r_got_req && 
 		      (r_state == ACTIVE);
 	
-	t_array_data = 'd0;
-	t_wr_array = 1'b0;
 	t_rsp_dst_valid = 1'b0;
-	t_rsp_fp_dst_valid = 1'b0;
 	t_rsp_data = 'd0;
 	
 	case(r_req.op)
@@ -1167,7 +1054,6 @@ endfunction
 	t_incr_busy = 1'b0;
 	
 	n_stall_store = 1'b0;
-	n_q_priority = !r_q_priority;
 	
 	n_reload_issue = r_reload_issue;
 	n_did_reload = 1'b0;
@@ -1419,23 +1305,6 @@ endfunction
 		    n_state = FLUSH_CL;
 		 end
 	    end // case: ACTIVE
-	  WAIT_INJECT_RELOAD:
-	    begin
-	       $stop();
-	       n_mem_req_valid = 1'b1;
-	       n_state = INJECT_RELOAD;
-	       n_mem_req_store_data = t_data;
-	    end
-	  INJECT_RELOAD:
-	    begin
-	       $stop();
-	       if(mem_rsp_valid)
-		  begin
-		     n_state = r_reload_issue ? HANDLE_RELOAD : ACTIVE;
-		     n_inhibit_write = 1'b0;
-		     n_reload_issue = 1'b0;
-		  end
-	    end
 	  HANDLE_RELOAD:
 	    begin
 	       t_cache_idx = r_req.addr[IDX_STOP-1:IDX_START];
