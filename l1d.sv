@@ -223,7 +223,6 @@ endfunction
    logic 				  r_must_forward, r_must_forward2;
       
    logic 				  n_inhibit_write, r_inhibit_write;
-   logic 				  t_got_non_mem, r_got_non_mem;
 
    logic                                  t_incr_busy,t_force_clear_busy;
    logic 				  n_stall_store, r_stall_store;
@@ -584,7 +583,6 @@ endfunction
 	     rr_did_reload <= 1'b0;
 	     
 	     rr_last_wr <= 1'b0;
-	     r_got_non_mem <= 1'b0;
 	     r_last_wr <= 1'b0;
 	     r_last_rd <= 1'b0;
 	     r_last_wr2 <= 1'b0;
@@ -631,7 +629,6 @@ endfunction
 	     rr_did_reload <= r_did_reload;
 	     
 	     rr_last_wr <= r_last_wr;
-	     r_got_non_mem <= t_got_non_mem;
 	     r_last_wr <= n_last_wr;
 	     r_last_rd <= n_last_rd;
 	     r_last_wr2 <= n_last_wr2;
@@ -1006,7 +1003,6 @@ endfunction
 	t_got_req = 1'b0;
 	t_got_req2 = 1'b0;
 	
-	t_got_non_mem = 1'b0;
 	n_last_wr = 1'b0;
 	n_last_rd = 1'b0;
 	n_last_wr2 = 1'b0;
