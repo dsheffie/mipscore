@@ -15,6 +15,7 @@ bool globals::trace_fp = false;
 bool globals::report_syscalls = false;
 static state_t *s = nullptr;
 static state_t *ss = nullptr;
+static state_t *oracle = nullptr;
 static uint64_t insns_retired = 0;
 static uint64_t pipestart = 0, pipeend = ~(0UL);
 
@@ -65,6 +66,91 @@ static const char* l1d_stall_str[8] =
    "inflight rob ptr", //7
 };
 static uint64_t l1d_stall_reasons[8] = {0};
+
+
+int lookup_target(int addr, long long branchcnt) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  //std::cout << "branch ip " << std::hex << a << std::dec << ", branchcount " << branchcnt << "\n";
+  
+  while(oracle->branchcnt < branchcnt) {
+    //std::cout << "oracle pc = " << std::hex << oracle->pc << std::dec << "\n";
+    execMips(oracle);
+  }
+  const branch_record &b = oracle->get_branch(branchcnt);
+  //std::cout << "record pc = " << std::hex << b.pc << std::dec << "\n";
+  //std::cout << "record target = " << std::hex << b.target << std::dec << "\n";
+  assert(b.pc == addr);
+  assert(b.branchcnt == branchcnt);
+  return b.target;
+}
+
+int read_word(int addr) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  int d = -1;
+  if((a & 3) == 0) {
+    d  = s->mem.get<int>(a);
+  }
+
+  //std::cout << "load - address " << std::hex << a
+  //<< ", data " << bswap<IS_LITTLE_ENDIAN>(d)    
+  //<< std::dec << "\n";
+  
+    //assert((a & 3) == 0);
+  return d;
+}
+
+void write_byte(int addr, char data) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  uint8_t d = *reinterpret_cast<uint8_t*>(&data);
+  s->mem.set<uint8_t>(a, d);
+}
+
+void write_half(int addr, short data) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  uint16_t d = *reinterpret_cast<uint16_t*>(&data);
+  s->mem.set<uint16_t>(a, d);
+
+}
+
+void write_word(int addr, int data) {
+  uint32_t a = *reinterpret_cast<uint32_t*>(&addr);
+  uint32_t d = *reinterpret_cast<uint32_t*>(&data);
+  //std::cout << "store - address " << std::hex << a
+  //<< ", data " << bswap<IS_LITTLE_ENDIAN>(d)
+  //<< std::dec << "\n";
+  assert((a & 3) == 0);
+  s->mem.set<uint32_t>(a, d);
+}
+
+
+void write_swl(int addr, int data) {
+  uint32_t ea = *reinterpret_cast<uint32_t*>(&addr);
+  uint32_t d = *reinterpret_cast<uint32_t*>(&data);
+  uint32_t ma = ea & 3;
+  ea &= 0xfffffffc;
+  uint32_t r = bswap<IS_LITTLE_ENDIAN>(s->mem.get<uint32_t>(ea));
+  uint32_t xx=0,x = bswap<IS_LITTLE_ENDIAN>(d);
+  uint32_t xs = x >> (8*ma);
+  uint32_t m = ~((1U << (8*(4 - ma))) - 1);
+  xx = (r & m) | xs;
+  s->mem.set<uint32_t>(ea, bswap<IS_LITTLE_ENDIAN>(xx));  
+
+}
+
+void write_swr(int addr, int data) {
+  uint32_t ea = *reinterpret_cast<uint32_t*>(&addr);
+  uint32_t d = *reinterpret_cast<uint32_t*>(&data);
+  uint32_t ma = ea & 3;
+  ea &= ~(3U);
+  uint32_t r = bswap<IS_LITTLE_ENDIAN>(s->mem.get<uint32_t>(ea));   
+  uint32_t xx=0,x = bswap<IS_LITTLE_ENDIAN>(d);
+  
+  uint32_t xs = 8*(3-ma);
+  uint32_t rm = (1U << xs) - 1;
+
+  xx = (x << xs) | (rm & r);
+  s->mem.set<uint32_t>(ea, bswap<IS_LITTLE_ENDIAN>(xx));
+}
 
 
 void record_restart(int cycles) {
@@ -354,8 +440,10 @@ int main(int argc, char **argv) {
   sparse_mem *sm1 = new sparse_mem();
   s = new state_t(*sm0);
   ss = new state_t(*sm1);
+  oracle = new state_t(*(new sparse_mem()));
   initState(s);
   initState(ss);
+  initState(oracle);
   globals::sysArgc = buildArgcArgv(mips_binary.c_str(),sysArgs.c_str(),&globals::sysArgv);
   initCapstone();
 
@@ -382,10 +470,13 @@ int main(int argc, char **argv) {
   //load checker
    if(use_checkpoint) {
      loadState(*ss, mips_binary.c_str());
+     loadState(*oracle, mips_binary.c_str());
    }
    else {
      load_elf(mips_binary.c_str(), ss);
      mkMonitorVectors(ss);
+     load_elf(mips_binary.c_str(), oracle);
+     mkMonitorVectors(oracle);     
    }
   
   // Create an instance of our module under test
@@ -597,6 +688,7 @@ int main(int argc, char **argv) {
   }
   
   s->pc = ss->pc;
+  assert(oracle->pc == ss->pc);
   while(!tb->ready_for_resume) {
     ++globals::cycle;  
       tb->clk = 1;
@@ -1327,6 +1419,7 @@ int main(int argc, char **argv) {
 
   delete s;
   delete ss;
+  delete oracle;
   delete [] insns_delivered;
   if(pl) {
     delete pl;

@@ -234,6 +234,15 @@ struct stat32_t {
 
 enum class fp_reg_state { unknown, sp, dp };
 
+static const uint64_t N_BRANCHES = 1024;
+
+class branch_record {
+public:
+  uint32_t pc;
+  uint32_t target;
+  uint64_t branchcnt;
+};
+
 class state_t{
 public:
   uint32_t pc = 0;
@@ -246,6 +255,8 @@ public:
   uint64_t icnt = 0;
   uint8_t brk = 0;
   uint64_t maxicnt = 0;
+  uint64_t branchcnt = 0;
+  branch_record branchbuf[N_BRANCHES];
   sparse_mem &mem;
   image_info32 linux_image;
   fp_reg_state cpr1_state[32] = {fp_reg_state::unknown};
@@ -254,6 +265,10 @@ public:
     memset(&linux_image, 0, sizeof(linux_image));
   }
   ~state_t();
+  void add_branch(uint32_t s, uint32_t t);
+  const branch_record &get_branch(uint64_t x) {
+    return branchbuf[x & (N_BRANCHES-1)];
+  }
 };
 
 

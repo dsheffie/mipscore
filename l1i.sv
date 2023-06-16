@@ -7,6 +7,7 @@ import "DPI-C" function void record_fetch(int push1, int push2, int push3, int p
 					  longint pc0, longint pc1, longint pc2, longint pc3,
 					  int bubble, int fq_full);
 
+import "DPI-C" function int lookup_target(input int addr, input longint nth_prediction);
 `endif
 
 module predecode(insn_, pd);
@@ -146,6 +147,8 @@ endmodule
 
 module l1i(clk,
 	   reset,
+	   got_ud,
+	   got_break,
 	   flush_req,
 	   flush_complete,
 	   restart_pc,
@@ -187,6 +190,8 @@ module l1i(clk,
 
    input logic clk;
    input logic reset;
+   input logic got_break;
+   input logic got_ud;
    input logic 	      flush_req;
    output logic       flush_complete;
    //restart signals
@@ -384,9 +389,8 @@ endfunction // is_nop
    
    //always_ff@(negedge clk)
    //begin
-   //$display("r_cache_pc = %x, t_branch_locs = %b, t_insn_idx = %d, t_branch_marker = %b, first_branch = %d",
-   //r_cache_pc,t_branch_locs, t_insn_idx, t_branch_marker, t_first_branch);
-   //end
+   //$display("r_cache_pc = %x",r_cache_pc);
+   // end
    
    
    localparam SEXT = `M_WIDTH-16;
@@ -540,14 +544,22 @@ endfunction // is_nop
 	  end	
      end // always_ff@ (posedge clk)
 
+
+   logic [63:0] n_prediction_count, r_prediction_count;
+   
+   
    always_ff@(posedge clk)
      begin
+	r_prediction_count <= (reset||got_ud||got_break) ? 64'd0 : n_prediction_count;
 	r_btb_pc <= reset ? 'd0 : 
 		    r_btb_valid[n_cache_pc[(`LG_BTB_SZ+1):2]] ? r_btb[n_cache_pc[(`LG_BTB_SZ+1):2]] : 32'd0;
 	
      end
 
-      
+   
+
+   logic [31:0] t_oracle_pc;
+   
    always_comb
      begin
 	n_pc = r_pc;
@@ -568,7 +580,8 @@ endfunction // is_nop
 	n_restart_req = restart_valid | r_restart_req;
 	t_miss = r_req && !(r_valid_out && (r_tag_out == r_cache_tag));
 	t_hit = r_req && (r_valid_out && (r_tag_out == r_cache_tag));
-
+	t_oracle_pc = 'd0;
+	
 	t_insn_idx = r_cache_pc[WORD_STOP-1:WORD_START];
 	
 	t_pd = select_pd(r_jump_out, t_insn_idx);
@@ -630,6 +643,7 @@ endfunction // is_nop
 	t_is_ret = 1'b0;
 	t_init_pht = 1'b0;
 	n_init_pht_idx = r_init_pht_idx;
+	n_prediction_count = r_prediction_count;
 	
 	case(r_state)
 	  INITIALIZE:
@@ -697,6 +711,12 @@ endfunction // is_nop
 	       else if(t_hit && !fq_full)
 		 begin
 		    t_update_spec_hist = (t_pd != 4'd0);
+		    if(t_update_spec_hist)
+		      begin
+			 n_prediction_count = r_prediction_count + 64'd1;
+			 t_oracle_pc = lookup_target(r_cache_pc, n_prediction_count);
+		      end
+		    
 		    if(t_pd == 4'd5 || t_pd == 4'd3)
 		      begin
 			 t_is_cflow = 1'b1;
@@ -722,26 +742,27 @@ endfunction // is_nop
 			 n_delay_slot = 1'b1;
 			 t_take_br = 1'b1;
 			 n_pc = ((r_cache_pc + 'd4) + {t_simm[`M_WIDTH-3:0], 2'd0});
+			 $stop();			 
 		      end
 		    else if(t_pd == 4'd9)
 		      begin
 			 //check if insn is bal or cond branch thinks its gonna be taken
-			 if(r_pht_out[1] || t_insn_data[25:21] == 5'd0)
+			 if(t_oracle_pc != (r_cache_pc + 'd8))
 			   begin
 			      t_is_cflow = 1'b1;
 			      n_delay_slot = 1'b1;			      
-			      n_pc = ((r_cache_pc + 'd4) + {t_simm[`M_WIDTH-3:0], 2'd0});
+			      n_pc = t_oracle_pc;
 			      t_is_call = 1'b1;
 			      t_take_br = 1'b1;
 			      //$display("some flavor of branch and link, predicting target %x", n_pc);
 			   end
 		      end
-		    else if(t_pd == 4'd1 && r_pht_out[1])
+		    else if(t_pd == 4'd1 && t_oracle_pc != (r_cache_pc + 'd8))
 		      begin
 			 t_is_cflow = 1'b1;			 
 			 n_delay_slot = 1'b1;
 			 t_take_br = 1'b1;
-			 n_pc = ((r_cache_pc + 'd4) + {t_simm[`M_WIDTH-3:0], 2'd0});
+			 n_pc = t_oracle_pc;
 			 //if(t_insn_idx != 'd3 && !fq_full2)
 			 //begin
 			 //t_push_insn2 = 1'b1;
@@ -755,7 +776,7 @@ endfunction // is_nop
 			 t_is_ret = 1'b1;
 			 n_delay_slot = 1'b1;
 			 t_take_br = 1'b1;
-			 n_pc = r_spec_return_stack[t_next_spec_rs_tos];
+			 n_pc = t_oracle_pc;
 		      end // if (t_pd == 4'd7)
 		    else if(t_pd == 4'd4 || t_pd == 4'd6)
 		      begin
@@ -763,7 +784,7 @@ endfunction // is_nop
 			 n_delay_slot = 1'b1;
 			 t_take_br = 1'b1;
 			 t_is_call = (t_pd == 4'd6);
-			 n_pc = r_btb_pc;
+			 n_pc = t_oracle_pc;
 			 //$display("predicted target for %x is %x", r_cache_pc, n_pc);			 
 		      end
 		    

@@ -27,6 +27,16 @@ state_t::~state_t() {
   delete &mem;
 }
 
+void state_t::add_branch(uint32_t s, uint32_t t) {
+  branchcnt++;    
+  branch_record &b = branchbuf[branchcnt & (N_BRANCHES-1)];
+  b.branchcnt = branchcnt;
+  b.pc = s;
+  b.target = t;
+  //std::cout << "added branch for " << std::hex << b.pc << std::dec << " for "
+  //<< branchcnt << "\n";
+}
+
 static void execSpecial2(uint32_t inst, state_t *s);
 static void execSpecial3(uint32_t inst, state_t *s);
 static void execCoproc0(uint32_t inst, state_t *s);
@@ -344,6 +354,7 @@ void branch(uint32_t inst, state_t *s) {
   int32_t imm = ((int32_t)himm) << 2;
   uint32_t npc = s->pc+4; 
   bool isLikely = false, takeBranch = false, saveReturn = false;
+
   switch(bt)
     {
     case branch_type::beql:
@@ -427,14 +438,17 @@ void branch(uint32_t inst, state_t *s) {
       UNREACHABLE();
     }
 
+  uint32_t o_pc = s->pc;
   s->pc += 4;
   if(isLikely) {
     if(takeBranch) {
       execMips<EL>(s);
       s->pc = (imm+npc);
+      s->add_branch(o_pc, s->pc);
     }
     else {
       s->pc += 4;
+      s->add_branch(o_pc, s->pc);      
     }
   }
   else {
@@ -442,9 +456,10 @@ void branch(uint32_t inst, state_t *s) {
     if(takeBranch){
       if(saveReturn) {
 	s->gpr[31] = npc + 4;
-      }
+      }      
       s->pc = (imm+npc);
     }
+    s->add_branch(o_pc, s->pc);
   }
 }
 
@@ -1580,18 +1595,22 @@ void execMips(state_t *s) {
 	break;
       case 0x08: { /* jr */
 	uint32_t jaddr = s->gpr[rs];
+	uint32_t o_pc = s->pc;
 	s->pc += 4;
 	execMips<EL>(s);
 	s->pc = jaddr;
+	s->add_branch(o_pc, s->pc);
 	s->insn_histo[mipsInsn::JR]++;	
 	break;
       }
       case 0x09: { /* jalr */
 	uint32_t jaddr = s->gpr[rs];
+	uint32_t o_pc = s->pc;	
 	s->gpr[31] = s->pc+8;
 	s->pc += 4;
 	execMips<EL>(s);
 	s->pc = jaddr;
+	s->add_branch(o_pc, s->pc);	
 	s->insn_histo[mipsInsn::JALR]++;	
 	break;
       }
@@ -1752,6 +1771,7 @@ void execMips(state_t *s) {
     execSpecial3(inst,s);
   else if(isJType) {
     uint32_t jaddr = inst & ((1<<26)-1);
+    uint32_t o_pc = s->pc;
     jaddr <<= 2;
     if(opcode==0x2) { /* j */
       s->pc += 4;
@@ -1769,6 +1789,7 @@ void execMips(state_t *s) {
     jaddr |= (s->pc & (~((1<<28)-1)));
     execMips<EL>(s);
     s->pc = jaddr;
+    s->add_branch(o_pc, s->pc);	
   }
   else if(isCoproc0) {
     if( ((inst >> 25)&1) ) {
