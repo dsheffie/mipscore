@@ -784,8 +784,7 @@ endfunction // is_nop
 			 n_delay_slot = 1'b1;
 			 t_take_br = 1'b1;
 			 t_is_call = (t_pd == 4'd6);
-			 n_pc = r_btb_pc;
-			 $stop();			 
+			 n_pc = t_oracle_pc;
 			 //$display("predicted target for %x is %x", r_cache_pc, n_pc);			 
 		      end
 		    
