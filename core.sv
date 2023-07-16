@@ -323,6 +323,8 @@ module core(clk,
 
    logic 		     n_got_break, r_got_break;
    logic 		     n_pending_break, r_pending_break;
+   logic 		     n_pending_ud, r_pending_ud;
+   logic 		     n_pending_bad_addr, r_pending_bad_addr;
    logic 		     n_got_ud, r_got_ud;
    logic 		     n_got_bad_addr, r_got_bad_addr;
    
@@ -517,6 +519,8 @@ module core(clk,
 	     r_monitor_rsp_data <= 'd0;
 	     r_got_break <= 1'b0;
 	     r_pending_break <= 1'b0;
+	     r_pending_ud <= 1'b0;
+	     r_pending_bad_addr <= 1'b0;	     	     
 	     r_got_ud <= 1'b0;
 	     r_got_bad_addr <= 1'b0;
 	     r_ready_for_resume <= 1'b0;
@@ -549,6 +553,8 @@ module core(clk,
 	     r_monitor_rsp_data <= n_monitor_rsp_data;
 	     r_got_break <= n_got_break;
 	     r_pending_break <= n_pending_break;
+	     r_pending_ud <= n_pending_ud;
+	     r_pending_bad_addr <= n_pending_bad_addr;	     	     
 	     r_got_ud <= n_got_ud;
 	     r_got_bad_addr <= n_got_bad_addr;
 	     r_ready_for_resume <= n_ready_for_resume;
@@ -853,6 +859,8 @@ module core(clk,
 	n_flush_cl_addr = r_flush_cl_addr;
 	n_got_break = r_got_break;
 	n_pending_break = r_pending_break;
+	n_pending_ud = r_pending_ud;
+	n_pending_bad_addr = r_pending_bad_addr;
 	n_got_ud = r_got_ud;
 	n_got_bad_addr = r_got_bad_addr;
 	n_monitor_reason = r_monitor_reason;
@@ -1203,7 +1211,11 @@ module core(clk,
 		 begin
 		    n_state = HALT;
 		    n_got_break = r_pending_break;
+		    n_got_bad_addr = r_pending_bad_addr;
+		    n_got_ud = r_pending_ud;
 		    n_pending_break = 1'b0;
+		    n_pending_ud = 1'b0;
+		    n_pending_bad_addr = 1'b0;
 		    n_ready_for_resume = 1'b1;		    		    
 		    n_l1i_flush_complete = 1'b0;
 		    n_l1d_flush_complete = 1'b0;
@@ -1247,23 +1259,23 @@ module core(clk,
 		 end
 	       else if(t_rob_head.is_ii)
 		 begin
-		    n_got_ud = 1'b1;
+		    n_pending_ud = 1'b1;
 		    n_cause = 5'd10;
 		 end
 	       else if(t_rob_head.is_bad_addr)
 		 begin
-		    n_got_bad_addr = 1'b1;
+		    n_pending_bad_addr = 1'b1;
 		    n_cause = 5'd10;
 		 end
 	       n_state = WRITE_EPC;
+	       n_epc = (t_rob_head.in_delay_slot ? (t_rob_head.pc - 'd4) : t_rob_head.pc);	       
 	    end
 	  WRITE_EPC:
 	    begin
 	       t_exception_wr_cpr0_val = 1'b1;
 	       t_exception_wr_cpr0_ptr = 5'd14;
-	       t_exception_wr_cpr0_data = {32'd0, (t_rob_head.in_delay_slot ? (t_rob_head.pc - 'd4) : t_rob_head.pc)};
+	       t_exception_wr_cpr0_data = {32'd0, r_epc};
 	       n_state = WRITE_CAUSE;
-	       n_epc = (t_rob_head.in_delay_slot ? (t_rob_head.pc - 'd4) : t_rob_head.pc);
 	    end
 	  WRITE_CAUSE:
 	    begin

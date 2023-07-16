@@ -875,8 +875,6 @@ int main(int argc, char **argv) {
       }
       last_retire = 0;
 
-      bool retired_same_pc = last_retired_pc == tb->retire_pc;
-
       last_retired_pc = tb->retire_pc;
 
       if(insns_retired >= start_trace_at)
@@ -923,8 +921,6 @@ int main(int argc, char **argv) {
 		    <<" \n";
 	}
       }
-      assert(!retired_same_pc);
-
       if(tb->got_bad_addr) {
 	std::cout << "fatal - unaligned address\n";
 	break;
@@ -1088,14 +1084,23 @@ int main(int argc, char **argv) {
       std::cout << "got break, epc = " << std::hex << tb->epc << std::dec << "\n";      
       break;
     }
-
-    if(tb->got_ud) {
+    else if(tb->got_ud) {
       std::cerr << "GOT UD for "
 		<< std::hex
-		<< tb->retire_pc
+		<< tb->epc
 		<< std::dec
 		<< " "
 		<< getAsmString(get_insn(tb->retire_pc, s), tb->retire_pc)
+		<< "\n";
+      break;
+    }
+    else if(tb->got_bad_addr) {
+      std::cerr << "GOT BAD VA for "
+		<< std::hex
+		<< tb->epc
+		<< std::dec
+		<< " "
+		<< getAsmString(get_insn(tb->epc, s), tb->epc)
 		<< "\n";
       break;
     }
